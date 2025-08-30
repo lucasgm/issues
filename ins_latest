@@ -49,28 +49,42 @@
     _proxy_flag: "{{ (((_proxy_val | default('') | string) | trim | length) > 0) | ternary('--setopt=proxy=' ~ _proxy_val, '') }}"
     _repo_flags: "{{ (yum_repo_flags | default('') | string) | trim }}"
 
-# 4) Derive RPM package names from the files (used for safe removal)
-- name: Derive package names from RPMs
+# 4) Derive package names / file NEVRs from the RPMs (for safe removal + debug)
+- name: Derive package NAMES from RPM files
   ansible.builtin.shell: 'rpm -qp --qf "%{NAME}\n" "{{ item }}"'
-  args:
-    executable: /bin/bash
+  args: { executable: /bin/bash }
   loop: "{{ _rpm_paths }}"
-  register: _rpm_qp
+  register: _rpm_qp_name
   failed_when: false
   changed_when: false
   when: (_rpm_paths | length) > 0
 
-- name: Collect unique package names
+- name: Derive package NEVRs from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
+
+- name: Collect unique package names and file NEVRs
   ansible.builtin.set_fact:
     _rpm_pkg_names: >-
       {{
-        (_rpm_qp.results | default([]))
+        (_rpm_qp_name.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+    _rpm_file_nevrs: >-
+      {{
+        (_rpm_qp_nevr.results | default([]))
         | map(attribute='stdout') | map('trim') | reject('equalto','')
         | list | unique
       }}
   when: (_rpm_paths | length) > 0
 
-# 5) Gate on installed package names, then collect installed NEVRs
+# 5) Find *installed* packages (names and NEVRs)
 - name: Check which package names are already installed
   ansible.builtin.shell: "rpm -q --quiet {{ item }}"
   args: { executable: /bin/bash }
@@ -110,15 +124,26 @@
     _rpm_joined: >-
       {{ (_rpm_paths | default([])) | map('regex_replace','^','"') | map('regex_replace','$','"') | join(' ') }}
     _rpm_joined_nevrs: "{{ (_rpm_installed_nevrs | default([])) | join(' ') }}"
+    _rpm_joined_names_all: "{{ (_rpm_pkg_names | default([])) | join(' ') }}"
+
+# Prefer removing exact installed NEVRs; if none detected, fall back to names from RPM files
+- name: Choose removal candidates (NEVRs preferred, else names)
+  ansible.builtin.set_fact:
+    _remove_candidates: >-
+      {{
+        (_rpm_installed_nevrs | default([]) | length) > 0
+        | ternary(_rpm_installed_nevrs, _rpm_pkg_names | default([]))
+      }}
+    _remove_joined: "{{ (_remove_candidates | default([])) | join(' ') }}"
 
 - name: Build install/remove commands (strings)
   ansible.builtin.set_fact:
     _remove_cmd: >-
-      {% if ((_rpm_installed_nevrs | default([])) | length) == 0 %}
+      {% if ((_remove_candidates | default([])) | length) == 0 %}
       echo "No packages to remove on {{ inventory_hostname }}.";
       {% else %}
-      /usr/bin/sudo rpm -e --nodeps {{ _rpm_joined_nevrs | default('') }} \
-      || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _rpm_joined_nevrs | default('') }} \
+      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined | default('') }} \
+      || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined | default('') }} \
       || true
       {% endif %}
     _dnf_install_cmd: >-
@@ -130,17 +155,19 @@
     _yum_downgrade_cmd: >-
       /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} downgrade {{ _rpm_joined | default('') }}
 
-# --- TEMP DEBUG: show exactly what we'll run (including proxy propagation) ----
-- name: "DEBUG (temp): built remove/install commands with proxy/repo flags"
+# --- TEMP DEBUG: show exactly what we'll do (including proxy propagation) ----
+- name: "DEBUG (temp): planned remove/install commands + inputs"
   ansible.builtin.debug:
     msg: |
       pm: {{ _pm }}
       proxy_flag: {{ _proxy_flag }}
       repo_flags: {{ _repo_flags }}
       rpm_paths: {{ _rpm_paths | to_nice_json }}
+      rpm_file_nevrs: {{ _rpm_file_nevrs | default([]) | to_nice_json }}
       rpm_pkg_names: {{ _rpm_pkg_names | default([]) | to_nice_json }}
       rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
       rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
+      remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
       remove_cmd: {{ _remove_cmd }}
       install_cmd: {{
         (_pm == 'dnf')
@@ -152,14 +179,8 @@
 
 # ── CHECK MODE: only show what we would do ───────────────────────────────────
 - block:
-    - name: (check) Which package names are already installed
-      ansible.builtin.debug:
-        var: _rpm_q
-      when: _rpm_q is defined
-
     - name: (check) BEFORE INSTALL hooks to run
-      ansible.builtin.debug:
-        var: _install_before
+      ansible.builtin.debug: { var: _install_before }
       when: _install_before | length > 0
 
     - name: (check) Would run remove + single package-manager line
@@ -174,8 +195,7 @@
           {%- endif %}
 
     - name: (check) AFTER INSTALL hooks to run
-      ansible.builtin.debug:
-        var: _install_after
+      ansible.builtin.debug: { var: _install_after }
       when: _install_after | length > 0
 
     - name: Record simulated install summary (Linux, check mode)
@@ -192,8 +212,7 @@
 - block:
     - name: BEFORE INSTALL hooks
       ansible.builtin.shell: "{{ item }}"
-      args:
-        executable: /bin/bash
+      args: { executable: /bin/bash }
       loop: "{{ _install_before }}"
       register: _before_out
       failed_when: false
@@ -205,20 +224,44 @@
         msg: "No RPMs to install on {{ inventory_hostname }}."
       when: _rpm_paths | length == 0
 
-    - name: Remove currently-installed packages for these artifacts (by NEVR)
-      ansible.builtin.shell: "{{ _remove_cmd }}"
-      args:
-        executable: /bin/bash
+    # Extra visibility: show current state before removal
+    - name: DEBUG before-remove: installed state for target names
+      ansible.builtin.shell: |
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          echo "=== rpm -q $n ==="
+          rpm -q "$n" || true
+        done
+      args: { executable: /bin/bash }
+      register: _debug_before_remove
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: Remove currently-installed packages (NEVRs preferred, fallback to names)
+      ansible.builtin.shell: |
+        set -x
+        {{ _remove_cmd }}
+      args: { executable: /bin/bash }
       register: _remove_run
-      when: (_rpm_installed_nevrs | default([]) | length) > 0
+      when: (_remove_candidates | default([]) | length) > 0
       changed_when: true
       failed_when: false
 
+    # Extra visibility: show removal result
+    - name: DEBUG remove result (rc/stdout/stderr)
+      ansible.builtin.debug:
+        msg: |
+          rc: {{ _remove_run.rc | default('n/a') }}
+          stdout:
+          {{ (_remove_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_remove_run.stderr | default('')) | indent(2) }}
+      when: _remove_run is defined
+
     - name: Verify removals (non-fatal check)
       ansible.builtin.shell: |
-        set -e
         rc=0
-        for n in {{ (_rpm_installed_names | default([])) | join(' ') }}; do
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
           if rpm -q --quiet "$n"; then
             echo "$n still installed"
             rc=1
@@ -227,30 +270,62 @@
         exit $rc
       args: { executable: /bin/bash }
       register: _remove_verify
-      when: (_rpm_installed_names | default([]) | length) > 0
+      when: (_rpm_pkg_names | default([]) | length) > 0
       changed_when: false
       failed_when: false
+
+    - name: DEBUG after-remove verification
+      ansible.builtin.debug:
+        msg: |
+          remove_verify_rc: {{ _remove_verify.rc | default('n/a') }}
+          remove_verify_stdout:
+          {{ (_remove_verify.stdout | default('')) | indent(2) }}
+          remove_verify_stderr:
+          {{ (_remove_verify.stderr | default('')) | indent(2) }}
+      when: _remove_verify is defined
 
     - name: Run package install/downgrade (single line)
       ansible.builtin.shell: |
         set -o pipefail
+        set -x
         {% if _pm == 'dnf' %}
         {{ _dnf_install_cmd }} || {{ _dnf_downgrade_cmd }}
         {% else %}
         {{ _yum_install_cmd }} || {{ _yum_downgrade_cmd }}
         {% endif %}
-      args:
-        executable: /bin/bash
+      args: { executable: /bin/bash }
       register: _pm_run
       when: _rpm_paths | length > 0
       changed_when: >
         (_rpm_paths | length > 0) and
         ('Nothing to do' not in ((_pm_run.stdout | default('')) + (_pm_run.stderr | default(''))))
 
+    - name: DEBUG install result (rc/stdout/stderr)
+      ansible.builtin.debug:
+        msg: |
+          rc: {{ _pm_run.rc | default('n/a') }}
+          stdout:
+          {{ (_pm_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_pm_run.stderr | default('')) | indent(2) }}
+      when: _pm_run is defined
+
+    # Extra visibility: show final state after install
+    - name: DEBUG after-install: installed state for target names
+      ansible.builtin.shell: |
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          echo "=== rpm -q $n ==="
+          rpm -q "$n" || true
+        done
+      args: { executable: /bin/bash }
+      register: _debug_after_install
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
     - name: AFTER INSTALL hooks
       ansible.builtin.shell: "{{ item }}"
-      args:
-        executable: /bin/bash
+      args: { executable: /bin/bash }
       loop: "{{ _install_after }}"
       register: _after_out
       failed_when: false
@@ -266,4 +341,3 @@
             success_artifacts: "{{ (_rpm_paths | length > 0 and (_pm_run.rc | default(0)) == 0) | ternary(_rpm_paths, []) }}"
             failed_artifacts:  "{{ (_rpm_paths | length > 0 and (_pm_run.rc | default(1)) != 0) | ternary(_rpm_paths, []) }}"
   when: not (ansible_check_mode | default(false))
-
