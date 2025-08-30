@@ -35,7 +35,7 @@
   ansible.builtin.set_fact:
     _pm: >-
       {{
-        (ansible_facts.pkg_mgr | default('yum')) in ['dnf','yum4']
+        ((ansible_facts.pkg_mgr | default('yum')) in ['dnf','yum4'])
         | ternary('dnf','yum')
       }}
 
@@ -123,15 +123,20 @@
   ansible.builtin.set_fact:
     _rpm_joined: >-
       {{ (_rpm_paths | default([])) | map('regex_replace','^','"') | map('regex_replace','$','"') | join(' ') }}
-    _rpm_joined_nevrs: "{{ (_rpm_installed_nevrs | default([])) | join(' ') }}"
-    _rpm_joined_names_all: "{{ (_rpm_pkg_names | default([])) | join(' ') }}"
 
 # Prefer removing exact installed NEVRs; if none detected, fall back to names from RPM files
 - name: Choose removal candidates (NEVRs preferred, else names)
   ansible.builtin.set_fact:
     _remove_candidates: >-
       {{ (_rpm_installed_nevrs | default([])) if ((_rpm_installed_nevrs | default([]) | length) > 0) else (_rpm_pkg_names | default([])) }}
+
+# IMPORTANT: build the joined removal list in a separate task (fixes empty join)
+- name: Join removal candidate list (plain and quoted)
+  ansible.builtin.set_fact:
     _remove_joined: "{{ (_remove_candidates | default([])) | join(' ') }}"
+    _remove_joined_q: >-
+      {{ (_remove_candidates | default([]))
+         | map('regex_replace','^','\"') | map('regex_replace','$','\"') | join(' ') }}
 
 - name: Build install/remove commands (strings)
   ansible.builtin.set_fact:
@@ -139,8 +144,8 @@
       {% if ((_remove_candidates | default([])) | length) == 0 %}
       echo "No packages to remove on {{ inventory_hostname }}.";
       {% else %}
-      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined | default('') }} \
-      || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined | default('') }} \
+      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined_q | default('') }} \
+      || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined_q | default('') }} \
       || true
       {% endif %}
     _dnf_install_cmd: >-
@@ -165,6 +170,8 @@
       rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
       rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
       remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
+      remove_joined: {{ _remove_joined }}
+      remove_joined_q: {{ _remove_joined_q }}
       remove_cmd: {{ _remove_cmd }}
       install_cmd: {{
         (_pm == 'dnf')
@@ -244,7 +251,6 @@
       changed_when: true
       failed_when: false
 
-    # Extra visibility: show removal result
     - name: DEBUG remove result (rc/stdout/stderr)
       ansible.builtin.debug:
         msg: |
@@ -307,7 +313,6 @@
           {{ (_pm_run.stderr | default('')) | indent(2) }}
       when: _pm_run is defined
 
-    # Extra visibility: show final state after install
     - name: "DEBUG after-install: installed state for target names"
       ansible.builtin.shell: |
         for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
