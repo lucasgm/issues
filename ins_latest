@@ -112,34 +112,32 @@
 # 5) Build command strings
 - name: Build rpm join lists
   ansible.builtin.set_fact:
-    # quote file paths (spaces-safe)
     _rpm_joined: >-
       {{ (_rpm_paths | default([])) | map('regex_replace','^','"') | map('regex_replace','$','"') | join(' ') }}
 
-# Prefer removing exact installed NEVRs; if none detected, fall back to names
 - name: Choose removal candidates (NEVRs preferred, else names)
   ansible.builtin.set_fact:
     _remove_candidates: >-
       {{ (_rpm_installed_nevrs | default([])) if ((_rpm_installed_nevrs | default([]) | length) > 0) else (_rpm_pkg_names | default([])) }}
 
-- name: Join removal candidate list (no quotes)
+- name: Join removal candidate list (no quotes, no empties)
   ansible.builtin.set_fact:
-    _remove_joined: "{{ (_remove_candidates | default([])) | reject('equalto','') | list | join(' ') }}"
+    _remove_joined: "{{ (_remove_candidates | default([])) | map('trim') | reject('equalto','') | list | join(' ') }}"
 
-- name: Build remove + install commands (yum only)
+- name: Build remove + install/reinstall commands (yum only)
   ansible.builtin.set_fact:
     _remove_cmd: >-
       {% if (_remove_joined | length) == 0 -%}
-      echo "No packages to remove on {{ inventory_hostname }}.";
+      echo "No packages to remove on {{ inventory_hostname }}."
       {%- else -%}
-      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined }} \
-      || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined }} \
-      || true
+      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined }} || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined }} || true
       {%- endif %}
     _yum_install_cmd: >-
       /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} install {{ _rpm_joined | default('') }}
+    _yum_reinstall_cmd: >-
+      /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} reinstall {{ _rpm_joined | default('') }}
 
-# --- TEMP DEBUG: show exactly what we'll do (including proxy propagation) ----
+# --- TEMP DEBUG: show exactly what we’ll do (including proxy propagation) ----
 - name: "DEBUG (temp): planned remove/install commands + inputs"
   ansible.builtin.debug:
     msg: |
@@ -153,7 +151,8 @@
       remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
       remove_joined: {{ _remove_joined }}
       remove_cmd: {{ _remove_cmd }}
-      install_cmd: {{ _yum_install_cmd }}
+      yum_install_cmd: {{ _yum_install_cmd }}
+      yum_reinstall_cmd: {{ _yum_reinstall_cmd }}
 
 # ── CHECK MODE: only show what we would do ───────────────────────────────────
 - block:
@@ -161,11 +160,15 @@
       ansible.builtin.debug: { var: _install_before }
       when: _install_before | length > 0
 
-    - name: (check) Would run remove + yum install
+    - name: (check) Would run remove + yum install (with reinstall fallback)
       ansible.builtin.debug:
         msg: |
           {{ _remove_cmd }} &&
-          {{ _yum_install_cmd }}
+          if rpm -q --quiet {{ (_rpm_pkg_names | default([])) | join(' ') }}; then
+            echo "Packages still present -> would run: {{ _yum_reinstall_cmd }}";
+          else
+            echo "Packages removed -> would run: {{ _yum_install_cmd }}";
+          fi
 
     - name: (check) AFTER INSTALL hooks to run
       ansible.builtin.debug: { var: _install_after }
@@ -197,7 +200,7 @@
         msg: "No RPMs to install on {{ inventory_hostname }}."
       when: _rpm_paths | length == 0
 
-    # Extra visibility: show current state before removal
+    # Visibility: state before removal
     - name: "DEBUG before-remove: installed state for target names"
       ansible.builtin.shell: |
         for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
@@ -256,21 +259,38 @@
           {{ (_remove_verify.stderr | default('')) | indent(2) }}
       when: _remove_verify is defined
 
-    - name: Run yum install (single line, multiple RPMs)
+    # Decide path: install vs reinstall (if removal didn’t take)
+    - name: Decide install mode (install vs reinstall)
+      ansible.builtin.set_fact:
+        _do_reinstall: "{{ (_remove_verify.rc | default(0)) | int != 0 }}"
+      when: (_rpm_paths | length) > 0
+
+    - name: Run yum install (fresh, after successful removals)
       ansible.builtin.shell: |
         set -o pipefail
         set -x
         {{ _yum_install_cmd }}
       args: { executable: /bin/bash }
       register: _yum_run
-      when: _rpm_paths | length > 0
+      when: (_rpm_paths | length > 0) and (not _do_reinstall | default(false))
       changed_when: >
         (_rpm_paths | length > 0) and
         ('Nothing to do' not in ((_yum_run.stdout | default('')) + (_yum_run.stderr | default(''))))
 
-    - name: DEBUG install result (rc/stdout/stderr)
+    - name: Run yum reinstall (same-version fallback when removal didn’t occur)
+      ansible.builtin.shell: |
+        set -o pipefail
+        set -x
+        {{ _yum_reinstall_cmd }}
+      args: { executable: /bin/bash }
+      register: _yum_run
+      when: (_rpm_paths | length > 0) and (_do_reinstall | default(false))
+      changed_when: true
+
+    - name: DEBUG install/reinstall result (rc/stdout/stderr)
       ansible.builtin.debug:
         msg: |
+          reinstall_mode: {{ _do_reinstall | default(false) }}
           rc: {{ _yum_run.rc | default('n/a') }}
           stdout:
           {{ (_yum_run.stdout | default('')) | indent(2) }}
@@ -278,7 +298,7 @@
           {{ (_yum_run.stderr | default('')) | indent(2) }}
       when: _yum_run is defined
 
-    # Extra visibility: show final state after install
+    # Final state after install
     - name: "DEBUG after-install: installed state for target names"
       ansible.builtin.shell: |
         for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
