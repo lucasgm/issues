@@ -404,4 +404,3 @@ skipping: [localhost]
 PLAY RECAP *********************************************************************
 localhost                  : ok=9    changed=1    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
 m4s-d545-ifroes-01         : ok=73   changed=5    unreachable=0    failed=0    skipped=25   rescued=0    ignored=0   
-
