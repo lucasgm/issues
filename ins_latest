@@ -110,8 +110,6 @@
       /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} install {{ _rpm_joined | default('') }}
     _yum_downgrade_cmd: >-
       /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} downgrade {{ _rpm_joined | default('') }}
-    _rpm_force_cmd: >-
-      /usr/bin/sudo rpm -Uvh --oldpackage --replacepkgs {{ _rpm_joined | default('') }}
 
 # --- TEMP DEBUG: show exactly what we'll run (including proxy propagation) ----
 - name: "DEBUG (temp): built remove/install commands with proxy/repo flags"
@@ -127,8 +125,8 @@
       install_cmd: {{
         (_pm == 'dnf')
         | ternary(
-            _dnf_install_cmd ~ ' || ' ~ _dnf_downgrade_cmd ~ ' || ' ~ _rpm_force_cmd,
-            _yum_install_cmd ~ ' || ' ~ _yum_downgrade_cmd ~ ' || ' ~ _rpm_force_cmd
+            _dnf_install_cmd ~ ' || ' ~ _dnf_downgrade_cmd,
+            _yum_install_cmd ~ ' || ' ~ _yum_downgrade_cmd
           )
       }}
 
@@ -150,9 +148,9 @@
           {{ _remove_cmd }}
           &&
           {%- if _pm == 'dnf' -%}
-          {{ _dnf_install_cmd }}  ||  {{ _dnf_downgrade_cmd }}  ||  {{ _rpm_force_cmd }}
+          {{ _dnf_install_cmd }}  ||  {{ _dnf_downgrade_cmd }}
           {%- else -%}
-          {{ _yum_install_cmd }}  ||  {{ _yum_downgrade_cmd }}  ||  {{ _rpm_force_cmd }}
+          {{ _yum_install_cmd }}  ||  {{ _yum_downgrade_cmd }}
           {%- endif %}
 
     - name: (check) AFTER INSTALL hooks to run
@@ -200,9 +198,9 @@
       ansible.builtin.shell: |
         set -o pipefail
         {% if _pm == 'dnf' %}
-        {{ _dnf_install_cmd }} || {{ _dnf_downgrade_cmd }} || {{ _rpm_force_cmd }}
+        {{ _dnf_install_cmd }} || {{ _dnf_downgrade_cmd }}
         {% else %}
-        {{ _yum_install_cmd }} || {{ _yum_downgrade_cmd }} || {{ _rpm_force_cmd }}
+        {{ _yum_install_cmd }} || {{ _yum_downgrade_cmd }}
         {% endif %}
       args:
         executable: /bin/bash
@@ -210,14 +208,6 @@
       when: _rpm_paths | length > 0
       changed_when: >
         (_rpm_paths | length > 0) and
-        (
-          ('Nothing to do' not in ((_pm_run.stdout | default('')) + (_pm_run.stderr | default(''))))
-          and
-          ('No packages marked for downgrade' not in ((_pm_run.stdout | default('')) + (_pm_run.stderr | default(''))))
-        )
-      failed_when: >
-        (_rpm_paths | length > 0) and
-        (_pm_run.rc != 0) and
         ('Nothing to do' not in ((_pm_run.stdout | default('')) + (_pm_run.stderr | default(''))))
 
     - name: AFTER INSTALL hooks
