@@ -130,10 +130,7 @@
 - name: Choose removal candidates (NEVRs preferred, else names)
   ansible.builtin.set_fact:
     _remove_candidates: >-
-      {{
-        (_rpm_installed_nevrs | default([]) | length) > 0
-        | ternary(_rpm_installed_nevrs, _rpm_pkg_names | default([]))
-      }}
+      {{ (_rpm_installed_nevrs | default([])) if ((_rpm_installed_nevrs | default([]) | length) > 0) else (_rpm_pkg_names | default([])) }}
     _remove_joined: "{{ (_remove_candidates | default([])) | join(' ') }}"
 
 - name: Build install/remove commands (strings)
@@ -225,7 +222,7 @@
       when: _rpm_paths | length == 0
 
     # Extra visibility: show current state before removal
-    - name: DEBUG before-remove: installed state for target names
+    - name: "DEBUG before-remove: installed state for target names"
       ansible.builtin.shell: |
         for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
           echo "=== rpm -q $n ==="
@@ -311,7 +308,7 @@
       when: _pm_run is defined
 
     # Extra visibility: show final state after install
-    - name: DEBUG after-install: installed state for target names
+    - name: "DEBUG after-install: installed state for target names"
       ansible.builtin.shell: |
         for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
           echo "=== rpm -q $n ==="
