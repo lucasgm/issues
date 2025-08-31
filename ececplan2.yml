@@ -1,0 +1,315 @@
+- name: airflow
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: configserver
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: iceclearingwallet-linux
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: irmdb
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: net806
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: rabbitmq-risk-cluster
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: redis-cluster
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: apigateway
+  type: SERVICE
+  dependsOn:
+    - componentName: airflow
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: irmdb
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: net806
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: rabbitmq-risk-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: redis-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.risk.irm
+      artifactId: ICEirm-api-gw-rpm
+      version: ""
+      rpmName: ICEirm-api-gw-rpm
+      serviceCommands:
+        health: ps -ef |grep -v grep| grep 'irm-api-gw' &>/dev/null && curl -v --insecure --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:42531/actuator/health
+        start: /usr/bin/sudo /var/opt/irm-api-gw/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo /var/opt/irm-api-gw/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep -i ''irm-api-gw'' &>/dev/null'
+  serverFilters:
+    - m4s-u1-ceigw-01
+  lifecycle:
+    - STOP
+- name: calibration
+  type: SERVICE
+  dependsOn:
+    - componentName: airflow
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: irmdb
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: net806
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: rabbitmq-risk-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: redis-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.risk.sd
+      artifactId: ICE-Clearing-IRM2-Calibration-WebApi
+      version: 9.3.2.30
+      rpmName: ICE-Clearing-IRM2-Calibration-WebApi
+      serviceCommands:
+        health: ps -ef |grep -v grep| grep 'Calibration' &>/dev/null && curl -v --insecure --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:42575/api/v1/HealthService/HealthCheck
+        start: /usr/bin/sudo  /var/opt/calibration/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo  /var/opt/calibration/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef |grep -v grep| grep -i ''Calibration'' &>/dev/null'
+  serverFilters:
+    - m4s-u1-cerms-20
+  lifecycle:
+    - DOWNLOAD
+- name: irmdbtools
+  type: SERVICE
+  dependsOn:
+    - componentName: airflow
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: configserver
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: configserver
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: net806
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: rabbitmq-risk-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: redis-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.risk
+      artifactId: ICEirm_db_tools
+      version: ""
+      rpmName: ICEirm_db_tools
+      serviceCommands:
+        health: ps -ef |grep -v grep| grep -i MAPS &>/dev/null
+        start: /usr/bin/sudo /var/opt/irmdbtools/scripts/startStop.sh start && sleep 30
+        stop: /usr/bin/sudo /var/opt/irmdbtools/scripts/startStop.sh stop && sleep 30
+        stopHealth: '! ps -ef |grep -v grep| grep -i MAPS &>/dev/null'
+  serverFilters:
+    - m4s-u1-ceidb-01
+  lifecycle:
+    - STOP
+- name: riskmodel
+  type: SERVICE
+  dependsOn:
+    - componentName: airflow
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: irmdb
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: net806
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: rabbitmq-risk-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: redis-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.risk.modelservices
+      artifactId: ICErisk-model-service-Linux
+      version: 9.3.2.1
+      rpmName: ICErisk-model-service-Linux
+      serviceCommands:
+        health: ps -ef |grep -v grep| grep -i risk-model &>/dev/null && curl -v --insecure --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:42534/risk-model-service/actuator/health
+        start: /usr/bin/sudo /var/opt/svc-risk-model/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc-risk-model/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep [M]onitoringID=svc-risk-model &>/dev/null'
+  serverFilters:
+    - m4s-u1-cerms-01
+    - m4s-u1-cerms-02
+    - m4s-u1-cerms-03
+    - m4s-u1-cerms-04
+    - m4s-u1-cerms-05
+    - m4s-u1-cerms-06
+    - m4s-u1-cerms-07
+    - m4s-u1-cerms-08
+    - m4s-u1-cerms-09
+    - m4s-u1-cerms-10
+    - m4s-u1-cerms-11
+    - m4s-u1-cerms-12
+    - m4s-u1-cerms-13
+    - m4s-u1-cerms-14
+    - m4s-u1-cerms-15
+    - m4s-u1-cerms-16
+    - m4s-u1-cerms-17
+    - m4s-u1-cerms-18
+    - m4s-u1-cerms-19
+    - m4s-u1-cerms-20
+  lifecycle:
+    - DOWNLOAD
+- name: scaling
+  type: SERVICE
+  dependsOn:
+    - componentName: airflow
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: irmdb
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: net806
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: rabbitmq-risk-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+    - componentName: redis-cluster
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.risk.sd
+      artifactId: ICE-Clearing-IRM2-Scaling-WebApi
+      version: 9.3.2.30
+      rpmName: ICE-Clearing-IRM2-Scaling-WebApi
+      serviceCommands:
+        health: ps -ef |grep -v grep| grep -i Scaling.WebApi &>/dev/null && curl -v --insecure --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:42545/api/v1/HealthService/HealthCheck
+        start: /usr/bin/sudo  /var/opt/scaling/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo  /var/opt/scaling/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef |grep -v grep| grep -i ''Scaling.WebApi'' &>/dev/null'
+  serverFilters:
+    - m4s-u1-cerms-20
+  lifecycle:
+    - DOWNLOAD
