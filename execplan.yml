@@ -1,0 +1,137 @@
+- name: rop-edge-service
+  type: SERVICE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.rop.edgeservice
+      artifactId: ICErop_edgeservice
+      version: 0.0.32
+      rpmName: ICErop_edgeservice
+      serviceCommands:
+        health: systemctl status rop_edgeservice
+        start: sudo /usr/bin/systemctl start rop_edgeservice
+        stop: sudo /usr/bin/systemctl stop rop_edgeservice
+        stopHealth: '! systemctl status rop_edgeservice'
+  serverFilters:
+    - m4s-d545-ifroes-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK
+- name: rop-worker-service
+  type: SERVICE
+  dependsOn:
+    - componentName: rop-edge-service
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.rop.rop_worker
+      artifactId: ICEropworker
+      version: 0.37.20
+      rpmName: ICEropworker
+      serviceCommands:
+        health: |-
+            for svc in rop_worker rop_worker_flower rop_worker_beat rop_worker_celery; do
+              for i in {1..5}; do
+                if systemctl is-active --quiet "$svc"; then
+                  break
+                fi
+                sleep 2
+              done
+              if ! systemctl is-active --quiet "$svc"; then
+                echo "$svc not active"
+                exit 2
+              fi
+            done
+        start: sudo /var/opt/rop_worker/worker.sh start
+        stop: sudo /var/opt/rop_worker/worker.sh stop
+        stopHealth: '! systemctl status rop_worker'
+  serverFilters:
+    - m4s-d545-ifrows-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK
+- name: rop-api-service
+  type: SERVICE
+  dependsOn:
+    - componentName: rop-worker-service
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.rop.rop_api_python
+      artifactId: ICEropapi-python
+      version: 0.0.30
+      rpmName: ICEropapi-python
+      serviceCommands:
+        health: systemctl status rop_api_python
+        start: sudo /usr/bin/systemctl start rop_api_python
+        stop: sudo /usr/bin/systemctl stop rop_api_python
+        stopHealth: '! systemctl status rop_api_python'
+  serverFilters:
+    - m4s-d545-ifroapi-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK
+- name: rop-statuscenter-service
+  type: SERVICE
+  dependsOn:
+    - componentName: rop-worker-service
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.rop.rop_status_center
+      artifactId: ICEropstatuscenter
+      version: 0.0.17
+      rpmName: ICEropstatuscenter
+      serviceCommands:
+        health: systemctl status rop_status_center
+        start: sudo /usr/bin/systemctl start rop_status_center
+        stop: sudo /usr/bin/systemctl stop rop_status_center
+        stopHealth: '! systemctl status rop_status_center'
+  serverFilters:
+    - m4s-d545-ifrosc-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK
+- name: rop-ui-service
+  type: SERVICE
+  dependsOn:
+    - componentName: rop-api-service
+      reverseDependency: false
+    - componentName: rop-edge-service
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.rop.rop_ui
+      artifactId: ICErop_ui
+      version: 0.0.35
+      rpmName: ICErop_ui
+      serviceCommands:
+        health: 'ps -ef | grep -i ''nginx: master'' | grep -v grep &> /dev/null'
+        start: sudo /var/opt/rop-ui/nginx.sh start
+        stop: sudo /var/opt/rop-ui/nginx.sh stop
+        stopHealth: '! ps -ef | grep -i ''nginx: master'' | grep -v grep &> /dev/null'
+  serverFilters:
+    - m4s-d545-ifroui-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK
