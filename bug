@@ -107,6 +107,61 @@
           {%- endif -%}
           {{ flags | join(' ') }}
 
+    # Pre-resolve Artifactory GAVC URLs (cache on localhost)
+    - name: Normalize Artifactory vars for cache
+      ansible.builtin.set_fact:
+        _art_url: "{{ artifactory_url | default('https://artifactory.intcx.net/artifactory') }}"
+        _art_tok: "{{ artifactory_token | default(lookup('env','ARTIFACTORY_TOKEN') | default(artifactory_password | default(''), true)) }}"
+
+    - name: Build list of unique GAVC keys
+      ansible.builtin.set_fact:
+        _gavc_keys: >-
+          {%- set ks = [] -%}
+          {%- for comp in components | default([]) -%}
+            {%- for cont in comp.containers | default([]) -%}
+              {%- set g = cont.groupId | default('') -%}
+              {%- set a = cont.artifactId | default(cont.name | default('')) -%}
+              {%- set v = cont.version | default('') -%}
+              {%- set p = (cont.type | default('') | lower) -%}
+              {%- if g and a and v and p -%}
+                {%- set _ = ks.append(g ~ ':' ~ a ~ ':' ~ v ~ ':' ~ p) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ ks | unique }}
+
+    - name: Initialize Artifactory URL cache
+      ansible.builtin.set_fact:
+        final_url_cache: {}
+
+    - name: Query Artifactory for GAVC keys
+      ansible.builtin.uri:
+        url: "{{ _art_url }}/api/search/gavc?g={{ (item.split(':')[0]) | urlencode }}&a={{ (item.split(':')[1]) | urlencode }}&v={{ (item.split(':')[2]) | urlencode }}&p={{ (item.split(':')[3]) | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ _art_tok }}"
+        return_content: true
+      register: _gavc_cache_resp
+      loop: "{{ _gavc_keys }}"
+      when: (_gavc_keys | length) > 0
+      retries: 3
+      delay: 2
+      until: _gavc_cache_resp.status | default(0) == 200
+      changed_when: false
+
+    - name: Build final_url_cache from responses
+      ansible.builtin.set_fact:
+        final_url_cache: >-
+          {%- set m = {} -%}
+          {%- for r in (_gavc_cache_resp.results | default([])) -%}
+            {%- set k = r.item -%}
+            {%- set p = (k.split(':')[3]) -%}
+            {%- set url = (r.json.results | default([]) | map(attribute='uri') | select('search','\\.' ~ p ~ '$') | map('regex_replace','/api/storage','') | list | first) -%}
+            {%- set _ = m.update({ k: (url | default('')) }) -%}
+          {%- endfor -%}
+          {{ m }}
+      when: _gavc_cache_resp is defined
+
     - name: Build dynamic host list from serverFilters
       ansible.builtin.set_fact:
         dynamic_hosts: >-
@@ -560,3 +615,692 @@
           | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
           | list | length
         ) > 0
+========================================================================================
+# roles/deploy_service/tasks/download_artifact.yml
+# Inputs:
+#   container: { type, groupId, artifactId, version, name? }
+#   art_url, art_token  (or artifactory_url / artifactory_token)
+# Exports (facts on the host):
+#   dest_path, final_url, download_status
+#   downloaded_rpms (list of RPM paths for single-line install later)
+
+- name: Gather minimal facts (for os_family)
+  ansible.builtin.setup:
+    gather_subset: [min]
+  when: ansible_facts is not defined
+
+- name: Normalise Artifactory vars
+  ansible.builtin.set_fact:
+    _art_url: "{{ art_url | default(artifactory_url) }}"
+    _art_tok: "{{ art_token | default(artifactory_token) }}"
+
+# ---- helpers first -----------------------------------------------------------
+- name: Derive artifact id and extension
+  ansible.builtin.set_fact:
+    _artifact_id: "{{ container.artifactId | default(container.name) }}"
+    _ext: "{{ (container.type | lower) }}"
+
+- name: Build cache key for this artefact
+  ansible.builtin.set_fact:
+    _cache_key: "{{ container.groupId ~ ':' ~ _artifact_id ~ ':' ~ container.version ~ ':' ~ _ext }}"
+
+- name: Try Artifactory URL from localhost cache
+  ansible.builtin.set_fact:
+    final_url: "{{ hostvars['localhost'].final_url_cache[_cache_key] | default('') }}"
+  when: hostvars['localhost'].final_url_cache is defined
+
+- name: Determine OS family (lowercased)
+  ansible.builtin.set_fact:
+    _osfam: "{{ (ansible_facts.os_family | default('')) | lower }}"
+
+- name: Compute destination directory
+  ansible.builtin.set_fact:
+    dest_dir: "{{ 'C:\\\\Temp' if _osfam == 'windows' else '/tmp' }}"
+
+- name: Compute filename
+  ansible.builtin.set_fact:
+    dest_filename: "{{ _artifact_id ~ '-' ~ container.version ~ '.' ~ _ext }}"
+
+- name: Compute full destination path
+  ansible.builtin.set_fact:
+    dest_path: >-
+      {{
+        (dest_dir ~ '\\' ~ dest_filename) if _osfam == 'windows'
+        else (dest_dir ~ '/' ~ dest_filename)
+      }}
+
+- name: Assert dest_path is a valid string
+  ansible.builtin.assert:
+    that:
+      - dest_path is string
+      - (dest_path | length) > 1
+    fail_msg: "Computed dest_path is invalid: {{ dest_path | default('undefined') }}"
+
+# ── Check mode: no I/O ───────────────────────────────────────────────────────
+- block:
+    - ansible.builtin.debug:
+        msg: >-
+          (check mode) Would search {{ _art_url }} for
+          {{ container.groupId }}:{{ _artifact_id }}:{{ container.version }}:{{ _ext }}
+          and download to {{ dest_path }}
+    - ansible.builtin.set_fact:
+        final_url: ~
+        download_status: "skipped (check mode)"
+      changed_when: false
+  when: ansible_check_mode | default(false)
+
+# ── Real work ────────────────────────────────────────────────────────────────
+- block:
+    - name: Build GAVC search URL (no whitespace)
+      ansible.builtin.set_fact:
+        search_url: "{{ _art_url ~ '/api/search/gavc'
+          ~ '?g=' ~ (container.groupId | urlencode)
+          ~ '&a=' ~ (_artifact_id | urlencode)
+          ~ '&v=' ~ (container.version | urlencode)
+          ~ '&p=' ~ (_ext | urlencode) }}"
+      changed_when: false
+      delegate_to: localhost
+      when: (final_url | default('') | length) == 0
+
+    - name: Search Artifactory (GAVC)
+      ansible.builtin.uri:
+        url: "{{ search_url }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ _art_tok }}"
+        return_content: true
+      register: gavc_search
+      delegate_to: localhost
+      retries: 3
+      delay: 3
+      until: gavc_search.status | default(0) == 200
+      changed_when: false
+      when: (final_url | default('') | length) == 0
+
+    - name: Get first downloadable URL
+      ansible.builtin.set_fact:
+        final_url: >-
+          {{
+            gavc_search.json.results | default([])
+            | map(attribute='uri')
+            | select('search', '\.' ~ _ext ~ '$')
+            | map('regex_replace', '/api/storage', '')
+            | first
+          }}
+      delegate_to: localhost
+      changed_when: false
+      when: (final_url | default('') | length) == 0
+
+    - name: Fail early if nothing found
+      ansible.builtin.assert:
+        that: final_url is string and final_url | length > 0
+        fail_msg: "No downloadable {{ _ext }} found for {{ container.groupId }}:{{ _artifact_id }}:{{ container.version }}"
+
+    # Linux
+    - name: Download artefact (Linux)
+      ansible.builtin.get_url:
+        url:  "{{ final_url }}"
+        dest: "{{ dest_path }}"
+        mode: "0644"
+        headers:
+          Authorization: "Bearer {{ _art_tok }}"
+      async: 900
+      poll: 0
+      throttle: 5
+      register: _dl_async
+      when: _osfam != 'windows'
+
+    - name: Track async download job
+      ansible.builtin.set_fact:
+        download_async_jobs: "{{ (download_async_jobs | default([])) + [ {'ansible_job_id': _dl_async.ansible_job_id, 'dest_path': dest_path} ] }}"
+      when:
+        - _osfam != 'windows'
+        - _dl_async is defined
+
+    # Windows
+    # - block:
+    #     - ansible.windows.win_file:
+    #         path: C:\Temp
+    #         state: directory
+    #     - ansible.windows.win_get_url:
+    #         url:  "{{ final_url }}"
+    #         dest: "{{ dest_path }}"
+    #         headers:
+    #           Authorization: "Bearer {{ _art_tok }}"
+    #   when: _osfam == 'windows'
+
+    - name: Mark download result
+      ansible.builtin.set_fact:
+        download_status: "{{ (final_url is defined) | ternary('queued','skipped') }}"
+      changed_when: false
+
+    # Accumulation moved to service_download.yml after async wait
+
+  rescue:
+    - name: Fail download with details
+      ansible.builtin.fail:
+        msg: >-
+          Download failed for {{ container.groupId }}:{{ _artifact_id | default(container.artifactId | default(container.name)) }}:{{ container.version }}:{{ _ext | default(container.type) }}
+          on host {{ inventory_hostname }}.
+          dest: {{ dest_path | default('n/a') }}
+          search_url: {{ search_url | default(_art_url | default('n/a')) }}
+          error: {{ (gavc_search.msg | default('')) | string | trim }}
+  when: not (ansible_check_mode | default(false))
+===================================================================================
+# roles/deploy_service/tasks/host_install_batch.yml
+
+# 1) Collect RPMs + hooks
+- name: Collect RPM paths and INSTALL hooks (Linux)
+  ansible.builtin.set_fact:
+    _rpm_paths_from_plan: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | selectattr('type','defined') | selectattr('type','equalto','RPM')
+        | selectattr('__dest','defined')
+        | map(attribute='__dest') | list
+      }}
+    _install_before: >-
+      {{
+        phase_services | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','INSTALL')
+        | selectattr('runStage','equalto','BEFORE')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+    _install_after: >-
+      {{
+        phase_services | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','INSTALL')
+        | selectattr('runStage','equalto','AFTER')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+
+- name: Prefer RPM paths captured during DOWNLOAD (if any)
+  ansible.builtin.set_fact:
+    _rpm_paths: "{{ (downloaded_rpms | default([]) + _rpm_paths_from_plan) | unique }}"
+  when: _rpm_paths is not defined
+
+# 2) Proxy / repo flags
+- name: Normalize proxy value
+  ansible.builtin.set_fact:
+    _proxy_val: "{{ (options.PROXY | default('') | string) | trim }}"
+
+- name: Build proxy flag and repo flags
+  ansible.builtin.set_fact:
+    _proxy_flag: "{{ (((_proxy_val | default('') | string) | trim | length) > 0) | ternary('--setopt=proxy=' ~ _proxy_val, '') }}"
+    _repo_flags: "{{ (yum_repo_flags | default('') | string) | trim }}"
+
+# 3) Derive package names / file NEVRs from the RPMs
+- name: Derive package NAMES from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_name
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
+
+- name: Derive package NEVRs from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
+
+- name: Collect unique package names and file NEVRs
+  ansible.builtin.set_fact:
+    _rpm_pkg_names: >-
+      {{
+        (_rpm_qp_name.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+    _rpm_file_nevrs: >-
+      {{
+        (_rpm_qp_nevr.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+  when: (_rpm_paths | length) > 0
+
+# 4) Find installed packages (names and NEVRs)
+- name: Check which package names are already installed
+  ansible.builtin.shell: "rpm -q --quiet {{ item }}"
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_pkg_names | default([]) }}"
+  register: _rpm_q
+  failed_when: false
+  changed_when: false
+  when: (_rpm_pkg_names | default([]) | length) > 0
+
+- name: Build list of installed package names
+  ansible.builtin.set_fact:
+    _rpm_installed_names: "{{ _rpm_q.results | selectattr('rc','equalto',0) | map(attribute='item') | list }}"
+  when: (_rpm_pkg_names | default([]) | length) > 0
+
+- name: Get installed NEVRs for those names
+  ansible.builtin.shell: "rpm -q {{ item }}"
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_installed_names | default([]) }}"
+  register: _rpm_q_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_installed_names | default([]) | length) > 0
+
+- name: Collect installed NEVRs (unique)
+  ansible.builtin.set_fact:
+    _rpm_installed_nevrs: >-
+      {{
+        (_rpm_q_nevr.results | default([]))
+        | map(attribute='stdout_lines') | list | sum(start=[])
+        | map('trim') | reject('equalto','') | list | unique
+      }}
+  when: (_rpm_installed_names | default([]) | length) > 0
+
+# 5) Build command strings
+- name: Build rpm join lists
+  ansible.builtin.set_fact:
+    _rpm_joined: >-
+      {{ (_rpm_paths | default([])) | map('regex_replace','^','"') | map('regex_replace','$','"') | join(' ') }}
+
+- name: Choose removal candidates (NEVRs preferred, else names)
+  ansible.builtin.set_fact:
+    _remove_candidates: >-
+      {{ (_rpm_installed_nevrs | default([])) if ((_rpm_installed_nevrs | default([]) | length) > 0) else (_rpm_pkg_names | default([])) }}
+
+- name: Join removal candidate list (no quotes, no empties)
+  ansible.builtin.set_fact:
+    _remove_joined: "{{ (_remove_candidates | default([])) | map('trim') | reject('equalto','') | list | join(' ') }}"
+
+- name: Build remove + install/reinstall commands (yum only)
+  ansible.builtin.set_fact:
+    _remove_cmd: >-
+      {% if (_remove_joined | length) == 0 -%}
+      echo "No packages to remove on {{ inventory_hostname }}."
+      {%- else -%}
+      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined }} || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined }} || true
+      {%- endif %}
+    _yum_install_cmd: >-
+      /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} install {{ _rpm_joined | default('') }}
+    _yum_reinstall_cmd: >-
+      /usr/bin/sudo yum -y {{ _proxy_flag | default('') }} {{ _repo_flags | default('') }} reinstall {{ _rpm_joined | default('') }}
+
+# --- TEMP DEBUG: show exactly what we’ll do (including proxy propagation) ----
+- name: "DEBUG (temp): planned remove/install commands + inputs"
+  ansible.builtin.debug:
+    msg: |
+      proxy_flag: {{ _proxy_flag }}
+      repo_flags: {{ _repo_flags }}
+      rpm_paths: {{ _rpm_paths | to_nice_json }}
+      rpm_file_nevrs: {{ _rpm_file_nevrs | default([]) | to_nice_json }}
+      rpm_pkg_names: {{ _rpm_pkg_names | default([]) | to_nice_json }}
+      rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
+      rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
+      remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
+      remove_joined: {{ _remove_joined }}
+      remove_cmd: {{ _remove_cmd }}
+      yum_install_cmd: {{ _yum_install_cmd }}
+      yum_reinstall_cmd: {{ _yum_reinstall_cmd }}
+  when: options.DEBUG | default(false)
+
+# ── CHECK MODE: only show what we would do ───────────────────────────────────
+- block:
+    - name: (check) BEFORE INSTALL hooks to run
+      ansible.builtin.debug: { var: _install_before }
+      when: _install_before | length > 0
+
+    - name: (check) Would run remove + yum install (with reinstall fallback)
+      ansible.builtin.debug:
+        msg: |
+          {{ _remove_cmd }} &&
+          if rpm -q --quiet {{ (_rpm_pkg_names | default([])) | join(' ') }}; then
+            echo "Packages still present -> would run: {{ _yum_reinstall_cmd }}";
+          else
+            echo "Packages removed -> would run: {{ _yum_install_cmd }}";
+          fi
+
+    - name: (check) AFTER INSTALL hooks to run
+      ansible.builtin.debug: { var: _install_after }
+      when: _install_after | length > 0
+
+    - name: Record simulated install summary (Linux, check mode)
+      ansible.builtin.set_stats:
+        aggregate: true
+        data:
+          install_summary:
+            host: "{{ inventory_hostname }}"
+            success_artifacts: []
+            failed_artifacts: []
+  when: ansible_check_mode | default(false)
+
+# ── REAL RUN ─────────────────────────────────────────────────────────────────
+- block:
+    - name: BEFORE INSTALL hooks
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _install_before }}"
+      register: _before_out
+      failed_when: false
+      changed_when: true
+      when: _install_before | length > 0
+
+    - name: Skip if no RPMs to install on this host
+      ansible.builtin.debug:
+        msg: "No RPMs to install on {{ inventory_hostname }}."
+      when: _rpm_paths | length == 0
+
+    # Visibility: state before removal
+    - name: "DEBUG before-remove: installed state for target names"
+      ansible.builtin.shell: |
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          echo "=== rpm -q $n ==="
+          rpm -q "$n" || true
+        done
+      args: { executable: /bin/bash }
+      register: _debug_before_remove
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: Remove currently-installed packages (NEVRs preferred, fallback to names)
+      ansible.builtin.shell: |
+        set -x
+        {{ _remove_cmd }}
+      args: { executable: /bin/bash }
+      register: _remove_run
+      when: (_remove_joined | length) > 0
+      changed_when: true
+      failed_when: false
+
+    - name: DEBUG remove result (rc/stdout/stderr)
+      ansible.builtin.debug:
+        msg: |
+          rc: {{ _remove_run.rc | default('n/a') }}
+          stdout:
+          {{ (_remove_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_remove_run.stderr | default('')) | indent(2) }}
+      when: _remove_run is defined
+
+    - name: Verify removals (non-fatal check)
+      ansible.builtin.shell: |
+        rc=0
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          if rpm -q --quiet "$n"; then
+            echo "$n still installed"
+            rc=1
+          fi
+        done
+        exit $rc
+      args: { executable: /bin/bash }
+      register: _remove_verify
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: DEBUG after-remove verification
+      ansible.builtin.debug:
+        msg: |
+          remove_verify_rc: {{ _remove_verify.rc | default('n/a') }}
+          remove_verify_stdout:
+          {{ (_remove_verify.stdout | default('')) | indent(2) }}
+          remove_verify_stderr:
+          {{ (_remove_verify.stderr | default('')) | indent(2) }}
+      when: _remove_verify is defined
+
+    # Decide path: install vs reinstall (if removal didn’t take)
+    - name: Decide install mode (install vs reinstall)
+      ansible.builtin.set_fact:
+        _do_reinstall: "{{ (_remove_verify.rc | default(0)) | int != 0 }}"
+      when: (_rpm_paths | length) > 0
+
+    - name: Run yum install (fresh, after successful removals)
+      ansible.builtin.shell: |
+        set -o pipefail
+        set -x
+        {{ _yum_install_cmd }}
+      args: { executable: /bin/bash }
+      register: _yum_run
+      when: (_rpm_paths | length > 0) and (not _do_reinstall | default(false))
+      changed_when: >
+        (_rpm_paths | length > 0) and
+        ('Nothing to do' not in ((_yum_run.stdout | default('')) + (_yum_run.stderr | default(''))))
+
+    - name: Run yum reinstall (same-version fallback when removal didn’t occur)
+      ansible.builtin.shell: |
+        set -o pipefail
+        set -x
+        {{ _yum_reinstall_cmd }}
+      args: { executable: /bin/bash }
+      register: _yum_run
+      when: (_rpm_paths | length > 0) and (_do_reinstall | default(false))
+      changed_when: true
+
+    - name: DEBUG install/reinstall result (rc/stdout/stderr)
+      ansible.builtin.debug:
+        msg: |
+          reinstall_mode: {{ _do_reinstall | default(false) }}
+          rc: {{ _yum_run.rc | default('n/a') }}
+          stdout:
+          {{ (_yum_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_yum_run.stderr | default('')) | indent(2) }}
+      when: _yum_run is defined
+
+    - name: Fail install if yum returned non-zero
+      ansible.builtin.fail:
+        msg: >-
+          Install failed for packages on {{ inventory_hostname }} (rc={{ _yum_run.rc | default('n/a') }}).
+          Command: {{ ( _do_reinstall | default(false) ) | ternary(_yum_reinstall_cmd, _yum_install_cmd) }}
+          stdout:
+          {{ (_yum_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_yum_run.stderr | default('')) | indent(2) }}
+      when: (_rpm_paths | length > 0) and (_yum_run.rc | default(0)) != 0
+
+    # Final state after install
+    - name: "DEBUG after-install: installed state for target names"
+      ansible.builtin.shell: |
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          echo "=== rpm -q $n ==="
+          rpm -q "$n" || true
+        done
+      args: { executable: /bin/bash }
+      register: _debug_after_install
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: AFTER INSTALL hooks
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _install_after }}"
+      register: _after_out
+      failed_when: false
+      changed_when: true
+      when: _install_after | length > 0
+
+    - name: Record install summary (Linux)
+      ansible.builtin.set_stats:
+        aggregate: true
+        data:
+          install_summary:
+            host: "{{ inventory_hostname }}"
+            success_artifacts: "{{ (_rpm_paths | length > 0 and (_yum_run.rc | default(0)) == 0) | ternary(_rpm_paths, []) }}"
+            failed_artifacts:  "{{ (_rpm_paths | length > 0 and (_yum_run.rc | default(1)) != 0) | ternary(_rpm_paths, []) }}"
+  when: not (ansible_check_mode | default(false))
+=================================================================================
+# Download all containers for a single service on the current host.
+#roles/deploy_service/tasks/service_download.yml
+- ansible.builtin.setup: { gather_subset: [min] }
+  when: ansible_facts is not defined
+
+- name: Reset async job list for this service
+  ansible.builtin.set_fact:
+    download_async_jobs: []
+
+- name: Build download list
+  ansible.builtin.set_fact:
+    _dl_list: "{{ service.containers | default([]) }}"
+
+- name: Download each container (check-safe include)
+  ansible.builtin.include_tasks: download_artifact.yml
+  loop: "{{ _dl_list }}"
+  loop_control:
+    loop_var: container
+    label: "{{ container.artifactId | default(container.name) }}:{{ container.version }}"
+  vars:
+    art_url:   "https://artifactory.intcx.net/artifactory"
+    art_token: "{{ artifactory_password }}"
+
+# After spawning async downloads per container, wait for completion and record RPMs
+- name: Wait for all async downloads to finish
+  ansible.builtin.async_status:
+    jid: "{{ job.ansible_job_id }}"
+  register: _dl_wait
+  until: _dl_wait.finished
+  retries: 450
+  delay: 2
+  loop: "{{ download_async_jobs | default([]) }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.dest_path }}"
+  when:
+    - (download_async_jobs | default([]) | length) > 0
+
+- name: Record completed RPM paths
+  ansible.builtin.set_fact:
+    downloaded_rpms: "{{ (downloaded_rpms | default([])) + [ item.item.dest_path ] | unique }}"
+  when:
+    - _dl_wait is defined
+    - item.finished | default(false)
+    - (item.rc | default(0)) == 0
+    - item.item.dest_path is search('\\.rpm$')
+    - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+  loop: "{{ _dl_wait.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.dest_path }}"
+===================================================================================
+# roles/deploy_service/tasks/wrapped_phase.yml
+# Inputs (at task invocation):
+#   phase: one of STOP, DOWNLOAD, INSTALL, START, HEALTH_CHECK
+#   component_name: name of component to act on
+
+- name: Ensure minimal facts for this host
+  ansible.builtin.setup:
+    gather_subset: [min]
+  when: ansible_facts is not defined
+
+- name: Select services for this host and phase
+  ansible.builtin.set_fact:
+    _sel_services: "{{ (hostvars[inventory_hostname].phase_map[phase] | default([])) | selectattr('name','equalto', component_name) | list }}"
+
+# STOP
+- name: Stop selected component (Linux)
+  when:
+    - phase == 'STOP'
+    - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: stop_only_linux.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
+- name: Stop selected component (Windows)
+  when:
+    - phase == 'STOP'
+    - (ansible_facts.os_family | default('')) in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: stop_only_windows.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
+# DOWNLOAD
+- name: Download selected component containers
+  when:
+    - phase == 'DOWNLOAD'
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: service_download.yml
+  loop: "{{ _sel_services }}"
+  loop_control: { loop_var: service, label: "{{ service.name }}" }
+  vars:
+    artifactory_url:   "{{ hostvars[inventory_hostname].artifactory_url }}"
+    artifactory_token: "{{ hostvars[inventory_hostname].artifactory_token }}"
+
+# INSTALL
+- name: Install selected component (Linux)
+  when:
+    - phase == 'INSTALL'
+    - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: host_install_batch.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+    yum_repo_flags: "{{ hostvars[inventory_hostname].yum_repo_flags }}"
+    options: "{{ hostvars[inventory_hostname].options }}"
+
+- name: Install selected component (Windows)
+  when:
+    - phase == 'INSTALL'
+    - (ansible_facts.os_family | default('')) in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: host_install_batch_windows.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
+# START
+- name: Start selected component (Linux)
+  when:
+    - phase == 'START'
+    - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: start_only_linux.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
+- name: Start selected component (Windows)
+  when:
+    - phase == 'START'
+    - (ansible_facts.os_family | default('')) in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: start_only_windows.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
+# HEALTH_CHECK
+- name: Health-check selected component (Linux)
+  when:
+    - phase == 'HEALTH_CHECK'
+    - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: health_only_linux.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
+- name: Health-check selected component (Windows)
+  when:
+    - phase == 'HEALTH_CHECK'
+    - (ansible_facts.os_family | default('')) in ['Windows','windows']
+    - (_sel_services | length) > 0
+  ansible.builtin.include_role:
+    name: deploy_service
+    tasks_from: health_only_windows.yml
+  vars:
+    phase_services: "{{ _sel_services }}"
+
