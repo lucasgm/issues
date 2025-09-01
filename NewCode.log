@@ -1,564 +1,3624 @@
-#run with new code and took took 3min 23 seconds still slower than the old code where components install was being executed sequentially. 
-# playbook.yml — ExecPlan-driven deployment
+Identity added: /runner/artifacts/9071/ssh_key_data (svc_ansible_poc@intcx.net)
+SSH password: 
 
-# ───────────────────────────────────────────────────────────────
-# Play 1 — Ingest execplan.yml and prepare host phase maps
-# ───────────────────────────────────────────────────────────────
-- name: Ingest exec plan and build host phase maps
-  hosts: localhost
-  gather_facts: false
+PLAY [Ingest exec plan and build host phase maps] ******************************
 
-  vars:
-    execplan_file: "execplan.yml"
+TASK [Load options (for PROXY/ENABLEREPO/DISABLEREPO)] *************************
+ok: [localhost]
 
-  pre_tasks:
-    - name: Load options (for PROXY/ENABLEREPO/DISABLEREPO)
-      ansible.builtin.include_vars: vars/vars.yml
+TASK [Read execplan.yml] *******************************************************
+ok: [localhost]
 
-  tasks:
-    - name: Read execplan.yml
-      ansible.builtin.set_fact:
-        components: "{{ lookup('file', execplan_file) | from_yaml }}"
+TASK [Derive component name lists and dependency groups] ***********************
+ok: [localhost]
 
-    - name: Derive component name lists and dependency groups
-      ansible.builtin.set_fact:
-        component_names: "{{ components | map(attribute='name') | list }}"
-        no_dep_components: "{{ components | selectattr('dependsOn','equalto',[]) | map(attribute='name') | list }}"
-        dep_components_in_order: "{{ (components | rejectattr('name','in', (components | selectattr('dependsOn','equalto',[]) | map(attribute='name') | list)) | map(attribute='name') | list) }}"
+TASK [Detect presence of action-specific dependency fields] ********************
+ok: [localhost]
 
-    # Compute dependency levels for stricter START+HEALTH gating
-    - name: Detect presence of action-specific dependency fields
-      ansible.builtin.set_fact:
-        has_dep_actions: >-
-          {{
-            (
-              components | map(attribute='dependsOn') | sum(start=[])
-              | selectattr('currentAction','defined') | list | length
-            ) > 0 or (
-              components | map(attribute='dependsOn') | sum(start=[])
-              | selectattr('dependsOnAction','defined') | list | length
-            ) > 0
-          }}
+TASK [Build START gating dependency map (action-aware)] ************************
+skipping: [localhost]
 
-    - name: Build START gating dependency map (action-aware)
-      ansible.builtin.set_fact:
-        comp_deps_map: >-
-          {%- set m = {} -%}
-          {%- for c in components -%}
-            {%- set deps = [] -%}
-            {%- for d in (c.dependsOn | default([])) -%}
-              {%- set ca = d.currentAction | default('') -%}
-              {%- set doa = d.dependsOnAction | default('') -%}
-              {%- if ca == 'START' and doa in ['HEALTH_CHECK','START'] -%}
-                {%- if d.componentName is defined and d.componentName -%}
-                  {%- set _ = deps.append(d.componentName) -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- set _ = m.update({ (c.name): (deps | unique) }) -%}
-          {%- endfor -%}
-          {{ m }}
-      when: has_dep_actions | bool
+TASK [Build START gating dependency map (fallback: generic dependsOn names)] ***
+ok: [localhost]
 
-    - name: "Build START gating dependency map (fallback: generic dependsOn names)"
-      ansible.builtin.set_fact:
-        comp_deps_map: >-
-          {%- set m = {} -%}
-          {%- for c in components -%}
-            {%- set deps = [] -%}
-            {%- for d in (c.dependsOn | default([])) -%}
-              {%- if d is string -%}
-                {%- set _ = deps.append(d) -%}
-              {%- elif d.componentName is defined and d.componentName -%}
-                {%- set _ = deps.append(d.componentName) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- set _ = m.update({ (c.name): (deps | unique) }) -%}
-          {%- endfor -%}
-          {{ m }}
-      when: not (has_dep_actions | bool)
+TASK [Initialize level computation state] **************************************
+ok: [localhost]
 
-    - name: Initialize level computation state
-      ansible.builtin.set_fact:
-        _levels: []
-        _done: []
-        _remaining: "{{ component_names | list }}"
+TASK [Iteratively compute dependency levels] ***********************************
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 0)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 1)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 2)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 3)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 4)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 5)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=iteration 6)
 
-    - name: Iteratively compute dependency levels
-      ansible.builtin.include_tasks: roles/deploy_service/tasks/compute_levels_step.yml
-      loop: "{{ range(0, (component_names | length) + 1) | list }}"
-      loop_control:
-        label: "iteration {{ item }}"
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-    - name: Assert dependency graph is acyclic
-      ansible.builtin.assert:
-        that: (_remaining | length) == 0
-        fail_msg: >-
-          Unresolvable dependencies detected. Remaining components: {{ _remaining }}. Check execplan.yml for cycles or missing names.
+TASK [Advance level state if any ready] ****************************************
+ok: [localhost]
 
-    - name: Compose yum repo flags
-      ansible.builtin.set_fact:
-        yum_repo_flags: >-
-          {%- set flags = [] -%}
-          {%- if options.DISABLEREPO | default('') | trim -%}
-            {%- set _ = flags.append('--disablerepo=' ~ (options.DISABLEREPO | trim)) -%}
-          {%- endif -%}
-          {%- if options.ENABLEREPO | default('') | trim -%}
-            {%- set _ = flags.append('--enablerepo=' ~ (options.ENABLEREPO | trim)) -%}
-          {%- endif -%}
-          {{ flags | join(' ') }}
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-    - name: Build dynamic host list from serverFilters
-      ansible.builtin.set_fact:
-        dynamic_hosts: >-
-          {{
-            components
-            | map(attribute='serverFilters') | sum(start=[])
-            | reject('equalto', None) | unique | list
-          }}
+TASK [Advance level state if any ready] ****************************************
+ok: [localhost]
 
-    - name: Fail if no hosts
-      ansible.builtin.assert:
-        that: dynamic_hosts | length > 0
-        fail_msg: "No hosts found in execplan.yml."
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-    - name: Build per-host phase map (STOP/DOWNLOAD/INSTALL/START/HEALTH_CHECK)
-      ansible.builtin.set_fact:
-        host_phase_map: >-
-          {%- set out = {} -%}
-          {%- for comp in components | default([]) -%}
-            {%- set phases = (comp.lifecycle | default([])) -%}
-            {%- set do_install = ('INSTALL' in phases) or ('DOWNLOAD' in phases) -%}
-            {%- for h in (comp.serverFilters | default([])) -%}
-              {%- if h not in out -%}
-                {%- set _ = out.update({h: {'STOP':[], 'DOWNLOAD':[], 'INSTALL':[], 'START':[], 'HEALTH_CHECK':[]}}) -%}
-              {%- endif -%}
-              {%- for ph in phases -%}
-                {%- if out[h][ph] is defined -%}
-                  {%- set _ = out[h][ph].append(comp) -%}
-                {%- endif -%}
-              {%- endfor -%}
-              {%- if do_install and ('INSTALL' not in phases) -%}
-                {%- set _ = out[h]['INSTALL'].append(comp) -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endfor -%}
-          {{ out }}
+TASK [Advance level state if any ready] ****************************************
+ok: [localhost]
 
-    - name: Register dynamic hosts with per-host variables
-      ansible.builtin.add_host:
-        name: "{{ h }}"
-        groups: dynamic_hosts
-        phase_map: "{{ host_phase_map[h] | default({'STOP':[], 'DOWNLOAD':[], 'INSTALL':[], 'START':[], 'HEALTH_CHECK':[]}) }}"
-        no_dep_components: "{{ no_dep_components }}"
-        dep_components_in_order: "{{ dep_components_in_order }}"
-        component_levels: "{{ _levels }}"
-        timeout: "{{ timeout | default(30, true) }}"
-        retry: "{{ retry | default(5, true) }}"
-        retryDelay: "{{ retryDelay | default(2, true) }}"
-        yum_repo_flags: "{{ yum_repo_flags }}"
-        options: "{{ options }}"
-        artifactory_url: "{{ artifactory_url | default('https://artifactory.intcx.net/artifactory') }}"
-        artifactory_token: "{{ artifactory_token | default(lookup('env','ARTIFACTORY_TOKEN') | default(artifactory_password | default(''), true)) }}"
-      loop: "{{ dynamic_hosts }}"
-      loop_control: { loop_var: h }
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-# ───────────────────────────────────────────────────────────────
-# Play 2 — STOP (parallel no-deps, then sequential remainder)
-# ───────────────────────────────────────────────────────────────
-- name: STOP phase (parallel roots, then sequential)
-  hosts: dynamic_hosts
-  gather_facts: false
-  strategy: free
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [Advance level state if any ready] ****************************************
+ok: [localhost]
 
-    - name: Stop (Linux) — parallel dependency-free components
-      when:
-        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: stop_only_linux.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-    - name: Stop (Windows) — parallel dependency-free components
-      when:
-        - (ansible_facts.os_family | default('')) in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: stop_only_windows.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Advance level state if any ready] ****************************************
+skipping: [localhost]
 
-    - name: Stop — sequential remainder (component-ordered)
-      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
-      vars:
-        phase: STOP
-        component_name: "{{ comp_name }}"
-      loop: "{{ hostvars[inventory_hostname].phase_map['STOP'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
-      loop_control:
-        loop_var: comp_name
-        label: "{{ comp_name }}"
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-# ───────────────────────────────────────────────────────────────
-# Play 3 — DOWNLOAD (parallel no-deps, then sequential remainder)
-# ───────────────────────────────────────────────────────────────
-- name: DOWNLOAD phase (parallel roots, then sequential)
-  hosts: dynamic_hosts
-  gather_facts: false
-  strategy: free
-  any_errors_fatal: true
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [Advance level state if any ready] ****************************************
+skipping: [localhost]
 
-    - name: Download artifacts — parallel dependency-free components
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: service_download.yml
-      loop: "{{ hostvars[inventory_hostname].phase_map['DOWNLOAD'] | selectattr('name','in', no_dep_components) | list }}"
-      loop_control: { loop_var: service, label: "{{ service.name }}" }
-      vars:
-        artifactory_url:   "{{ hostvars[inventory_hostname].artifactory_url }}"
-        artifactory_token: "{{ hostvars[inventory_hostname].artifactory_token }}"
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
 
-    - name: Download artifacts — sequential remainder (component-ordered)
-      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
-      vars:
-        phase: DOWNLOAD
-        component_name: "{{ comp_name }}"
-      loop: "{{ hostvars[inventory_hostname].phase_map['DOWNLOAD'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
-      loop_control:
-        loop_var: comp_name
-        label: "{{ comp_name }}"
+TASK [Advance level state if any ready] ****************************************
+skipping: [localhost]
 
-# ───────────────────────────────────────────────────────────────
-# Play 4 — INSTALL (parallel no-deps, then sequential remainder)
-# ───────────────────────────────────────────────────────────────
-- name: INSTALL phase (parallel roots, then sequential)
-  hosts: dynamic_hosts
-  gather_facts: false
-  strategy: free
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [Assert dependency graph is acyclic] **************************************
+ok: [localhost] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
 
-    - name: Host-wide install (Linux) — parallel dependency-free components
-      when:
-        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: host_install_batch.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list }}"
-        yum_repo_flags: "{{ hostvars[inventory_hostname].yum_repo_flags }}"
-        options: "{{ hostvars[inventory_hostname].options }}"
+TASK [Compose yum repo flags] **************************************************
+ok: [localhost]
 
-    - name: Host-wide install (Windows) — parallel dependency-free components
-      when:
-        - (ansible_facts.os_family | default('')) in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: host_install_batch_windows.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Normalize Artifactory vars for cache] ************************************
+ok: [localhost]
 
-    # Note: Sequential remainder moved to a later play after gating.
+TASK [Build list of unique GAVC keys] ******************************************
+ok: [localhost]
 
-# ───────────────────────────────────────────────────────────────
-# Play 4b — START + HEALTH (roots only, parallel)
-# ───────────────────────────────────────────────────────────────
-- name: ROOT START + HEALTH (parallel for no-deps)
-  hosts: dynamic_hosts
-  gather_facts: false
-  strategy: free
-  any_errors_fatal: true
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [Initialize Artifactory URL cache] ****************************************
+ok: [localhost]
 
-    - name: Start root services (Linux)
-      when:
-        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: start_only_linux.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Query Artifactory for GAVC keys] *****************************************
+ok: [localhost] => (item=com.theice.rop.rop_authentication:ICErop-authentication:0.0.13:rpm)
+ok: [localhost] => (item=com.theice.rop.edgeservice:ICErop_edgeservice:0.0.32:rpm)
+ok: [localhost] => (item=com.theice.rop.rop_worker:ICEropworker:0.37.20:rpm)
+ok: [localhost] => (item=com.theice.rop.rop_api_python:ICEropapi-python:0.0.30:rpm)
+ok: [localhost] => (item=com.theice.rop.rop_status_center:ICEropstatuscenter:0.0.17:rpm)
+ok: [localhost] => (item=com.theice.rop.rop_ui:ICErop_ui:0.0.35:rpm)
 
-    - name: Start root services (Windows)
-      when:
-        - (ansible_facts.os_family | default('')) in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: start_only_windows.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Build final_url_cache from responses] ************************************
+ok: [localhost]
 
-    - name: Health-check root services (Linux)
-      when:
-        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: health_only_linux.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Build dynamic host list from serverFilters] ******************************
+ok: [localhost]
 
-    - name: Health-check root services (Windows)
-      when:
-        - (ansible_facts.os_family | default('')) in ['Windows','windows']
-        - (hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: health_only_windows.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list }}"
+TASK [Fail if no hosts] ********************************************************
+ok: [localhost] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
 
-# ───────────────────────────────────────────────────────────────
-# Play 4c — Gate dependent installs on root success
-# ───────────────────────────────────────────────────────────────
-- name: Gate dependent installs on root success
-  hosts: localhost
-  gather_facts: false
-  vars:
-    real_hosts: "{{ groups['dynamic_hosts'] | default([]) }}"
-  tasks:
-    - name: Collect root-phase stats from hosts
-      ansible.builtin.set_fact:
-        _root_install_fail_count: >-
-          {{
-            real_hosts
-            | map('extract', hostvars, 'install_summary')
-            | map('default', {'failed_artifacts':[]})
-            | map(attribute='failed_artifacts')
-            | map('length')
-            | sum
-          }}
-        _root_start_fail_count: >-
-          {{
-            real_hosts
-            | map('extract', hostvars, 'start_health_summary')
-            | map('default', []) | list | sum(start=[])
-            | selectattr('start_fail','defined') | selectattr('start_fail','truthy')
-            | list | length
-          }}
-        _root_health_fail_count: >-
-          {{
-            real_hosts
-            | map('extract', hostvars, 'start_health_summary')
-            | map('default', []) | list | sum(start=[])
-            | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
-            | list | length
-          }}
+TASK [Build per-host phase map (STOP/DOWNLOAD/INSTALL/START/HEALTH_CHECK)] *****
+ok: [localhost]
 
-    - name: Debug root-phase failure summary
-      ansible.builtin.debug:
-        msg:
-          install_failures: "{{ _root_install_fail_count }}"
-          start_failures:   "{{ _root_start_fail_count }}"
-          health_failures:  "{{ _root_health_fail_count }}"
+TASK [Register dynamic hosts with per-host variables] **************************
+changed: [localhost] => (item=m4s-d545-ifroas-01)
+changed: [localhost] => (item=m4s-d545-ifroes-01)
+changed: [localhost] => (item=m4s-d545-ifrows-01)
+changed: [localhost] => (item=m4s-d545-ifroapi-01)
+changed: [localhost] => (item=m4s-d545-ifrosc-01)
+changed: [localhost] => (item=m4s-d545-ifroui-01)
 
-    - name: Fail if any root INSTALL/START/HEALTH failed
-      ansible.builtin.fail:
-        msg: >-
-          Root component failures detected (INSTALL/START/HEALTH). Aborting dependent installs.
-      when: >-
-        (_root_install_fail_count | int) > 0 or
-        (_root_start_fail_count | int) > 0 or
-        (_root_health_fail_count | int) > 0
+PLAY [STOP phase (parallel roots, then sequential)] ****************************
 
-# ───────────────────────────────────────────────────────────────
-# Play 4d — INSTALL (sequential remainder only)
-# ───────────────────────────────────────────────────────────────
-- name: INSTALL remainder (sequential)
-  hosts: dynamic_hosts
-  gather_facts: false
-  any_errors_fatal: true
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifroes-01]
 
-    - name: Install — sequential remainder (component-ordered)
-      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
-      vars:
-        phase: INSTALL
-        component_name: "{{ comp_name }}"
-      loop: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
-      loop_control:
-        loop_var: comp_name
-        label: "{{ comp_name }}"
+TASK [Stop (Linux) — parallel dependency-free components] **********************
+skipping: [m4s-d545-ifroui-01]
 
-# ───────────────────────────────────────────────────────────────
-# Play 5 — START + HEALTH gated by dependency levels
-# ───────────────────────────────────────────────────────────────
-- name: START + HEALTH (level-gated)
-  hosts: dynamic_hosts
-  gather_facts: false
-  any_errors_fatal: true
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifrosc-01]
 
-    - name: Prepare component levels for this host
-      ansible.builtin.set_fact:
-        _levels_host: "{{ hostvars[inventory_hostname].component_levels | default([]) }}"
+TASK [Stop (Linux) — parallel dependency-free components] **********************
 
-    - name: Start services level-by-level (Linux)
-      when:
-        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
-        - (_levels_host | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: start_only_linux.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
-      loop: "{{ _levels_host }}"
-      loop_control:
-        loop_var: level_group
-        index_var: level_index
-        label: "level={{ level_index }}"
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-d545-ifroui-01]
 
-    - name: Start services level-by-level (Windows)
-      when:
-        - (ansible_facts.os_family | default('')) in ['Windows','windows']
-        - (_levels_host | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: start_only_windows.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
-      loop: "{{ _levels_host }}"
-      loop_control:
-        loop_var: level_group
-        index_var: level_index
-        label: "level={{ level_index }}"
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrows-01]
 
-    - name: Health-check level-by-level (Linux)
-      when:
-        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
-        - (_levels_host | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: health_only_linux.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
-      loop: "{{ _levels_host }}"
-      loop_control:
-        loop_var: level_group
-        index_var: level_index
-        label: "level={{ level_index }}"
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifroes-01]
 
-    - name: Health-check level-by-level (Windows)
-      when:
-        - (ansible_facts.os_family | default('')) in ['Windows','windows']
-        - (_levels_host | length) > 0
-      ansible.builtin.include_role:
-        name: deploy_service
-        tasks_from: health_only_windows.yml
-      vars:
-        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
-      loop: "{{ _levels_host }}"
-      loop_control:
-        loop_var: level_group
-        index_var: level_index
-        label: "level={{ level_index }}"
+TASK [Stop (Linux) — parallel dependency-free components] **********************
+skipping: [m4s-d545-ifrosc-01]
 
-# Play 6 removed; Health checks are performed within Play 5 per level
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroas-01]
 
-# ───────────────────────────────────────────────────────────────
-# Play 7 — Aggregate results
-# ───────────────────────────────────────────────────────────────
-- name: POST_DEPLOY cleanup and SE Tools
-  hosts: dynamic_hosts
-  gather_facts: false
-  strategy: free
-  tasks:
-    - ansible.builtin.setup: { gather_subset: [min] }
+TASK [Stop (Linux) — parallel dependency-free components] **********************
+skipping: [m4s-d545-ifroapi-01]
 
-    - name: Clear prior host errors so post-deploy still runs
-      meta: clear_host_errors
+TASK [Stop — sequential remainder (component-ordered)] *************************
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifroui-01 => (item=rop-ui-service)
 
-    - block:
-        - name: Run post_deploy role (SE Tools + cleanup)
-          ansible.builtin.include_role:
-            name: post_deploy
-      rescue:
-        - name: Report post_deploy failure but continue
-          ansible.builtin.debug:
-            msg: "post_deploy failed on {{ inventory_hostname }} — continuing to next host"
-      always:
-        - name: Mark post_deploy attempted
-          ansible.builtin.debug:
-            msg: "post_deploy attempted on {{ inventory_hostname }}"
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifroes-01]
 
+TASK [Stop (Linux) — parallel dependency-free components] **********************
+skipping: [m4s-d545-ifrows-01]
 
-- name: Aggregate results and fail on errors
-  hosts: localhost
-  gather_facts: false
-  vars:
-    real_hosts: "{{ groups['dynamic_hosts'] | default([]) }}"
-  tasks:
-    - name: Collect stats (normalize shapes)
-      ansible.builtin.set_fact:
-        install_summary: >-
-          {{
-            real_hosts
-            | map('extract', hostvars, 'install_summary')
-            | map('default', {'success_artifacts':[], 'failed_artifacts':[]})
-            | list
-          }}
-        start_health_summary: >-
-          {{
-            real_hosts
-            | map('extract', hostvars, 'start_health_summary')
-            | map('default', [])
-            | list
-          }}
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-d545-ifrosc-01]
 
-    - name: Show summarized results
-      ansible.builtin.debug:
-        msg:
-          failed_installs: >-
-            {{
-              install_summary
-              | map(attribute='failed_artifacts') | select('defined') | select('truthy')
-              | list | length
-            }}
-          failed_starts: >-
-            {{
-              start_health_summary | sum(start=[])
-              | selectattr('start_fail','defined') | selectattr('start_fail','truthy')
-              | list | length
-            }}
-          failed_health: >-
-            {{
-              start_health_summary | sum(start=[])
-              | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
-              | list | length
-            }}
+TASK [Stop (Linux) — parallel dependency-free components] **********************
 
-    - name: Fail if any install/start/health failures
-      ansible.builtin.fail:
-        msg: "Deployment failures detected. See host stats above."
-      when: >
-        (
-          install_summary
-          | map(attribute='failed_artifacts') | select('defined') | select('truthy')
-          | list | length
-        ) > 0
-        or
-        (
-          start_health_summary | sum(start=[])
-          | selectattr('start_fail','defined')  | selectattr('start_fail','truthy')
-          | list | length
-        ) > 0
-        or
-        (
-          start_health_summary | sum(start=[])
-          | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
-          | list | length
-        ) > 0
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifroui-01]
 
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Stop — sequential remainder (component-ordered)] *************************
+
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifroas-01]
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifrosc-01 => (item=rop-statuscenter-service)
+
+TASK [deploy_service : Reset async job list for stop] **************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Stop — sequential remainder (component-ordered)] *************************
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifroui-01]
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifrows-01 => (item=rop-worker-service)
+
+TASK [Stop — sequential remainder (component-ordered)] *************************
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifrows-01]
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifroapi-01 => (item=rop-api-service)
+
+TASK [Stop selected component (Linux)] *****************************************
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Reset async job list for stop] **************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Reset async job list for stop] **************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Reset async job list for stop] **************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Reset async job list for stop] **************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Reset async job list for stop] **************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+changed: [m4s-d545-ifroas-01] => (item=sudo /usr/bin/systemctl stop rop_authentication)
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+changed: [m4s-d545-ifroes-01] => (item=sudo /usr/bin/systemctl stop rop_edgeservice)
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+
+TASK [deploy_service : Track stop async jobs] **********************************
+ok: [m4s-d545-ifroas-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j170392193858.37221', 'results_file': '/home/svc_ansible_poc/.ansible_async/j170392193858.37221', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl stop rop_authentication', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Track stop async jobs] **********************************
+ok: [m4s-d545-ifroes-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j963252922601.1009346', 'results_file': '/home/svc_ansible_poc/.ansible_async/j963252922601.1009346', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl stop rop_edgeservice', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+changed: [m4s-d545-ifroui-01] => (item=sudo /var/opt/rop-uiginx.sh stop)
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+changed: [m4s-d545-ifrows-01] => (item=sudo /var/opt/rop_worker/worker.sh stop)
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+
+TASK [deploy_service : Track stop async jobs] **********************************
+ok: [m4s-d545-ifrows-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j701795273522.3760664', 'results_file': '/home/svc_ansible_poc/.ansible_async/j701795273522.3760664', 'changed': True, 'failed_when_result': False, 'item': 'sudo /var/opt/rop_worker/worker.sh stop', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Track stop async jobs] **********************************
+ok: [m4s-d545-ifroui-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j128351371453.2944665', 'results_file': '/home/svc_ansible_poc/.ansible_async/j128351371453.2944665', 'changed': True, 'failed_when_result': False, 'item': 'sudo /var/opt/rop-uiginx.sh stop', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+changed: [m4s-d545-ifrosc-01] => (item=sudo /usr/bin/systemctl stop rop_status_center)
+
+TASK [deploy_service : Track stop async jobs] **********************************
+ok: [m4s-d545-ifrosc-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j663357859901.817744', 'results_file': '/home/svc_ansible_poc/.ansible_async/j663357859901.817744', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl stop rop_status_center', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Stop services (Linux) async] ****************************
+changed: [m4s-d545-ifroapi-01] => (item=sudo /usr/bin/systemctl stop rop_api_python)
+
+TASK [deploy_service : Track stop async jobs] **********************************
+ok: [m4s-d545-ifroapi-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j545257309795.820818', 'results_file': '/home/svc_ansible_poc/.ansible_async/j545257309795.820818', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl stop rop_api_python', 'ansible_loop_var': 'item'})
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (180 retries left).
+FAILED - RETRYING: [m4s-d545-ifroas-01]: Wait for stop jobs (180 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for stop jobs (180 retries left).
+
+TASK [deploy_service : Wait for stop jobs] *************************************
+changed: [m4s-d545-ifroui-01] => (item=j128351371453.2944665)
+FAILED - RETRYING: [m4s-d545-ifrosc-01]: Wait for stop jobs (180 retries left).
+FAILED - RETRYING: [m4s-d545-ifroapi-01]: Wait for stop jobs (180 retries left).
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifroui-01] => (item=! ps -ef | grep -i 'nginx: master' | grep -v grep &> /devull)
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifroui-01] => (item=rop-ui-service) 
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifroui-01]
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (179 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for stop jobs (179 retries left).
+
+TASK [deploy_service : Wait for stop jobs] *************************************
+changed: [m4s-d545-ifroas-01] => (item=j170392193858.37221)
+
+TASK [deploy_service : Wait for stop jobs] *************************************
+changed: [m4s-d545-ifrosc-01] => (item=j663357859901.817744)
+
+TASK [deploy_service : Wait for stop jobs] *************************************
+changed: [m4s-d545-ifroapi-01] => (item=j545257309795.820818)
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifroas-01] => (item=! systemctl status rop_authentication)
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifrosc-01] => (item=! systemctl status rop_status_center)
+
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Stop — sequential remainder (component-ordered)] *************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifroapi-01] => (item=! systemctl status rop_api_python)
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifrosc-01] => (item=rop-statuscenter-service) 
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifroapi-01] => (item=rop-api-service) 
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifroapi-01]
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for stop jobs (178 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (178 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for stop jobs (177 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (177 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for stop jobs (176 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (176 retries left).
+
+TASK [deploy_service : Wait for stop jobs] *************************************
+changed: [m4s-d545-ifrows-01] => (item=j701795273522.3760664)
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (175 retries left).
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifrows-01] => (item=! systemctl status rop_worker)
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifrows-01] => (item=rop-worker-service) 
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifrows-01]
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (174 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (173 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (172 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (171 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (170 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (169 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (168 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (167 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (166 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (165 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (164 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (163 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (162 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (161 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (160 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (159 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (158 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (157 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (156 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (155 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (154 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (153 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (152 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (151 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (150 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (149 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (148 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (147 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (146 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (145 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (144 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (143 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (142 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (141 retries left).
+FAILED - RETRYING: [m4s-d545-ifroes-01]: Wait for stop jobs (140 retries left).
+
+TASK [deploy_service : Wait for stop jobs] *************************************
+changed: [m4s-d545-ifroes-01] => (item=j963252922601.1009346)
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifroes-01] => (item=! systemctl status rop_edgeservice)
+
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [Stop — sequential remainder (component-ordered)] *************************
+skipping: [m4s-d545-ifroes-01]
+
+PLAY [DOWNLOAD phase (parallel roots, then sequential)] ************************
+[WARNING]: Using any_errors_fatal with the free strategy is not supported, as
+tasks are executed independently on each host
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Download artifacts — parallel dependency-free components] ****************
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-d545-ifroes-01]
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Download artifacts — parallel dependency-free components] ****************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifroes-01 => (item=ICErop_edgeservice:0.0.32)
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroas-01]
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifrows-01 => (item=rop-worker-service)
+
+TASK [Download artifacts — parallel dependency-free components] ****************
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifrosc-01 => (item=rop-statuscenter-service)
+
+TASK [Download artifacts — parallel dependency-free components] ****************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifrosc-01]
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifroapi-01 => (item=rop-api-service)
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifroui-01 => (item=rop-ui-service)
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifrows-01]
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifroas-01 => (item=ICErop-authentication:0.0.13)
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Download selected component containers] **********************************
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Download selected component containers] **********************************
+
+TASK [Download selected component containers] **********************************
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-d545-ifrows-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-d545-ifroes-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [Download selected component containers] **********************************
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifrows-01 => (item=ICEropworker:0.37.20)
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-d545-ifrosc-01]
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifroapi-01 => (item=ICEropapi-python:0.0.30)
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-d545-ifroas-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-d545-ifroes-01]
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifrosc-01 => (item=ICEropstatuscenter:0.0.17)
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-d545-ifroas-01]
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifroui-01 => (item=ICErop_ui:0.0.35)
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-d545-ifroes-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-d545-ifrows-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-d545-ifroapi-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-d545-ifrosc-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-d545-ifroui-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-d545-ifrows-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-d545-ifroapi-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-d545-ifrosc-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-d545-ifroui-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-d545-ifroes-01] => (item=/tmp/ICErop_edgeservice-0.0.32.rpm)
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-d545-ifroas-01] => (item=/tmp/ICErop-authentication-0.0.13.rpm)
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-d545-ifrows-01] => (item=/tmp/ICEropworker-0.37.20.rpm)
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-d545-ifroapi-01] => (item=/tmp/ICEropapi-python-0.0.30.rpm)
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-d545-ifrosc-01] => (item=/tmp/ICEropstatuscenter-0.0.17.rpm)
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-d545-ifroui-01] => (item=/tmp/ICErop_ui-0.0.35.rpm)
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Linux)] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifroui-01]
+
+PLAY [INSTALL phase (parallel roots, then sequential)] *************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Host-wide install (Linux) — parallel dependency-free components] *********
+skipping: [m4s-d545-ifrows-01]
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Host-wide install (Linux) — parallel dependency-free components] *********
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Host-wide install (Linux) — parallel dependency-free components] *********
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Host-wide install (Windows) — parallel dependency-free components] *******
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Host-wide install (Linux) — parallel dependency-free components] *********
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Host-wide install (Windows) — parallel dependency-free components] *******
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-d545-ifroes-01] => (item=/tmp/ICErop_edgeservice-0.0.32.rpm)
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-d545-ifroas-01] => (item=/tmp/ICErop-authentication-0.0.13.rpm)
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-d545-ifroes-01] => (item=/tmp/ICErop_edgeservice-0.0.32.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-d545-ifroas-01] => (item=/tmp/ICErop-authentication-0.0.13.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-d545-ifroes-01] => (item=ICErop_edgeservice)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-d545-ifroas-01] => (item=ICErop-authentication)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-d545-ifroes-01] => (item=ICErop_edgeservice)
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-d545-ifroas-01] => (item=ICErop-authentication)
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  Removing sudo include file for: svc_ropworker\\n  Removing application directory: /var/opt/rop_edge\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICErop_edgeservice-0.0.32-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_edge\\n  + ARTIFACTID=ICErop_edgeservice\\n  + CRONFILE=\\n  + GID=8021\\n  + GROUP=svc_ropworker\\n  + HOMEDIR=/home/svc_ropworker\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc_ropworker\\n  + USID=8021\\n  + SYSTEMD=rop_edgeservice\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop_edge/logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z rop_edgeservice ]]\\n  ++ systemctl is-enabled rop_edgeservice\\n  + is_service_enabled=disabled\\n  + [[ disabled == \\\\e\\\\n\\\\a\\\\b\\\\l\\\\e\\\\d ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_edgeservice.service\\n  + [[ -f /usr/lib/systemd/system/rop_edgeservice.service ]]\\n  + rm /usr/lib/systemd/system/rop_edgeservice.service\\n  + systemctl daemon-reload\\n  + '[' -n /var/opt/rop_edge/ ']'\\n  + runHook\\n  + '[' -f /var/opt/rop_edge/ ']'\\n  + exit 0\\n  warning: file /var/opt/rop_edge/environments/m4s-u8/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-u8/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-pr/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-pr/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-i4/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-i4/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-d545/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-d545/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/c6s-pr/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/c6s-pr/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/rop_edgeservice.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/docs/swagger.json: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_edge\\n  + ARTIFACTID=ICErop_edgeservice\\n  + CRONFILE=\\n  + GID=8021\\n  + GROUP=svc_ropworker\\n  + HOMEDIR=/home/svc_ropworker\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc_ropworker\\n  + USID=8021\\n  + SYSTEMD=rop_edgeservice\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICErop_edgeservice\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICErop_edgeservice ']'\\n  + echo 'Removing sudo include file for: svc_ropworker'\\n  + rm /etc/sudoers.d/ICErop_edgeservice\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop_edge'\\n  + '[' -n /var/opt/rop_edge ']'\\n  + '[' /var/opt/rop_edge '!=' / ']'\\n  + '[' /var/opt/rop_edge '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop_edge\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  Removing sudo include file for: svc-ropas\\n  Removing application directory: /var/opt/rop_authentication/\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICErop-authentication-0.0.13-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_authentication/\\n  + ARTIFACTID=ICErop-authentication\\n  + CRONFILE=\\n  + GID=1630\\n  + GROUP=svc-ropas\\n  + HOMEDIR=/home/svc-ropas\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc-ropas\\n  + USID=1630\\n  + SYSTEMD=rop_authentication\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop_authentication//logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z rop_authentication ]]\\n  ++ systemctl is-enabled rop_authentication\\n  + is_service_enabled=disabled\\n  + [[ disabled == \\\\e\\\\n\\\\a\\\\b\\\\l\\\\e\\\\d ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_authentication.service\\n  + [[ -f /usr/lib/systemd/system/rop_authentication.service ]]\\n  + rm /usr/lib/systemd/system/rop_authentication.service\\n  + systemctl daemon-reload\\n  + '[' -n /var/opt/rop_authentication// ']'\\n  + runHook\\n  + '[' -f /var/opt/rop_authentication// ']'\\n  + exit 0\\n  warning: file /var/opt/rop_authentication/environments/m4s-u8/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/m4s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/m4s-poc/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/m4s-i4/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/m4s-d545/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/c6s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/version_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/rop_authentication.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/requirements.txt: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/requirement-private.txt: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/.bashrc: remove failed: No such file or directory\\n  warning: file /var/opt/rop_authentication/environments/all/.bash_profile: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_authentication/\\n  + ARTIFACTID=ICErop-authentication\\n  + CRONFILE=\\n  + GID=1630\\n  + GROUP=svc-ropas\\n  + HOMEDIR=/home/svc-ropas\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc-ropas\\n  + USID=1630\\n  + SYSTEMD=rop_authentication\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICErop-authentication\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICErop-authentication ']'\\n  + echo 'Removing sudo include file for: svc-ropas'\\n  + rm /etc/sudoers.d/ICErop-authentication\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop_authentication/'\\n  + '[' -n /var/opt/rop_authentication/ ']'\\n  + '[' /var/opt/rop_authentication/ '!=' / ']'\\n  + '[' /var/opt/rop_authentication/ '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop_authentication/\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Host-wide install (Windows) — parallel dependency-free components] *******
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Host-wide install (Windows) — parallel dependency-free components] *******
+skipping: [m4s-d545-ifroas-01]
+
+PLAY [ROOT START + HEALTH (parallel for no-deps)] ******************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Start root services (Linux)] *********************************************
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Start root services (Windows)] *******************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Start root services (Windows)] *******************************************
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Health-check root services (Linux)] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [Health-check root services (Linux)] **************************************
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) would start (Linux)] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "_start_cmds": [
+        "sudo /usr/bin/systemctl start rop_authentication"
+    ]
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_start_cmds": [
+        "sudo /usr/bin/systemctl start rop_edgeservice"
+    ]
+}
+
+TASK [Health-check root services (Linux)] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check root services (Windows)] ************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) AFTER start hooks] ******************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+
+TASK [Health-check root services (Windows)] ************************************
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Push simulated start summary (Linux)] *******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Health-check root services (Windows)] ************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Reset async job list for start] *************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Start services (Linux) async] ***************************
+changed: [m4s-d545-ifroes-01] => (item=sudo /usr/bin/systemctl start rop_edgeservice)
+changed: [m4s-d545-ifroas-01] => (item=sudo /usr/bin/systemctl start rop_authentication)
+
+TASK [deploy_service : Track start async jobs and map commands] ****************
+ok: [m4s-d545-ifroes-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j615865771013.1013681', 'results_file': '/home/svc_ansible_poc/.ansible_async/j615865771013.1013681', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl start rop_edgeservice', 'ansible_loop_var': 'item'})
+ok: [m4s-d545-ifroas-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j668991184589.38865', 'results_file': '/home/svc_ansible_poc/.ansible_async/j668991184589.38865', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl start rop_authentication', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Wait for start jobs] ************************************
+changed: [m4s-d545-ifroes-01] => (item=j615865771013.1013681)
+
+TASK [deploy_service : Build failed start details] *****************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Wait for start jobs] ************************************
+changed: [m4s-d545-ifroas-01] => (item=j668991184589.38865)
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build failed start details] *****************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Start root services (Windows)] *******************************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Health-check root services (Linux)] **************************************
+
+TASK [Start root services (Windows)] *******************************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [Health-check root services (Linux)] **************************************
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-d545-ifroes-01] => {
+    "_health_cmds": [
+        "systemctl status rop_edgeservice"
+    ]
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-d545-ifroas-01] => {
+    "_health_cmds": [
+        "systemctl status rop_authentication"
+    ]
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+ok: [m4s-d545-ifroes-01] => (item=systemctl status rop_edgeservice)
+
+TASK [deploy_service : Build failed health details] ****************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+ok: [m4s-d545-ifroas-01] => (item=systemctl status rop_authentication)
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Build failed health details] ****************************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Push health summary (Linux)] ****************************
+ok: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+skipping: [m4s-d545-ifroas-01]
+
+TASK [Health-check root services (Windows)] ************************************
+skipping: [m4s-d545-ifroes-01]
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [deploy_service : Push health summary (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [Health-check root services (Windows)] ************************************
+skipping: [m4s-d545-ifroas-01]
+
+PLAY [Gate dependent installs on root success] *********************************
+
+TASK [Collect root-phase stats from hosts] *************************************
+ok: [localhost]
+
+TASK [Debug root-phase failure summary] ****************************************
+ok: [localhost] => {
+    "msg": {
+        "health_failures": "0",
+        "install_failures": "0",
+        "start_failures": "0"
+    }
+}
+
+TASK [Fail if any root INSTALL/START/HEALTH failed] ****************************
+skipping: [localhost]
+
+PLAY [INSTALL remainder (sequential)] ******************************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifroas-01]
+
+TASK [Install — sequential remainder (component-ordered)] **********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifrows-01 => (item=rop-worker-service)
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifroapi-01 => (item=rop-api-service)
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifrosc-01 => (item=rop-statuscenter-service)
+included: /runner/project/roles/deploy_service/tasks/wrapped_phase.yml for m4s-d545-ifroui-01 => (item=rop-ui-service)
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifrows-01] => (item=rop-worker-service) 
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Install selected component (Linux)] **************************************
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-d545-ifrows-01] => (item=/tmp/ICEropworker-0.37.20.rpm)
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-d545-ifrows-01] => (item=/tmp/ICEropworker-0.37.20.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-d545-ifrows-01] => (item=ICEropworker)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-d545-ifrows-01] => (item=ICEropworker)
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  disabled\\n  disabled\\n  disabled\\n  Removing sudo include file for: svc_ropworker\\n  Removing application directory: /var/opt/rop_worker\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICEropworker-0.37.20-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_worker\\n  + ARTIFACTID=ICEropworker\\n  + CRONFILE=/var/opt/rop_worker/cronfile\\n  + GID=8021\\n  + GROUP=svc_ropworker\\n  + HOMEDIR=/home/svc-ropworker\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=preremovehook.sh\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=/var/opt/rop_worker/worker.sh\\n  + SYMLINK=\\n  + USER=svc_ropworker\\n  + USID=8021\\n  + SYSTEMD=rop_worker\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop_worker/logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z rop_worker ]]\\n  ++ systemctl is-enabled rop_worker\\n  + is_service_enabled=disabled\\n  + [[ disabled == \\\\e\\\\n\\\\a\\\\b\\\\l\\\\e\\\\d ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_worker.service\\n  + [[ -f /usr/lib/systemd/system/rop_worker.service ]]\\n  + rm /usr/lib/systemd/system/rop_worker.service\\n  + systemctl daemon-reload\\n  + '[' -n /var/opt/rop_worker/preremovehook.sh ']'\\n  + runHook\\n  + '[' -f /var/opt/rop_worker/preremovehook.sh ']'\\n  + . /var/opt/rop_worker/preremovehook.sh\\n  ++ set -x\\n  ++ source /var/opt/rop_worker/service_functions.sh\\n  +++ set -x\\n  +++ ALL_SERVICES='rop_worker_celery rop_worker_flower rop_worker_beat rop_worker'\\n  +++ CELERY_SERVICES='rop_worker_celery rop_worker_flower rop_worker_beat'\\n  ++ trap egress EXIT\\n  + exit 0\\n  + egress\\n  + for service in $ALL_SERVICES\\n  + disable_service rop_worker_celery\\n  + local service_name=rop_worker_celery\\n  + [[ -z rop_worker_celery ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_worker_celery.service\\n  + systemctl is-active --quiet rop_worker_celery\\n  + systemctl is-enabled rop_worker_celery\\n  + [[ -f /usr/lib/systemd/system/rop_worker_celery.service ]]\\n  + rm /usr/lib/systemd/system/rop_worker_celery.service\\n  + systemctl daemon-reload\\n  + for service in $ALL_SERVICES\\n  + disable_service rop_worker_flower\\n  + local service_name=rop_worker_flower\\n  + [[ -z rop_worker_flower ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_worker_flower.service\\n  + systemctl is-active --quiet rop_worker_flower\\n  + systemctl is-enabled rop_worker_flower\\n  + [[ -f /usr/lib/systemd/system/rop_worker_flower.service ]]\\n  + rm /usr/lib/systemd/system/rop_worker_flower.service\\n  + systemctl daemon-reload\\n  + for service in $ALL_SERVICES\\n  + disable_service rop_worker_beat\\n  + local service_name=rop_worker_beat\\n  + [[ -z rop_worker_beat ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_worker_beat.service\\n  + systemctl is-active --quiet rop_worker_beat\\n  + systemctl is-enabled rop_worker_beat\\n  + [[ -f /usr/lib/systemd/system/rop_worker_beat.service ]]\\n  + rm /usr/lib/systemd/system/rop_worker_beat.service\\n  + systemctl daemon-reload\\n  + for service in $ALL_SERVICES\\n  + disable_service rop_worker\\n  + local service_name=rop_worker\\n  + [[ -z rop_worker ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_worker.service\\n  + systemctl is-active --quiet rop_worker\\n  + systemctl is-enabled rop_worker\\n  Failed to get unit file state for rop_worker.service: No such file or directory\\n  + [[ -f /usr/lib/systemd/system/rop_worker.service ]]\\n  + systemctl daemon-reload\\n  warning: file /var/opt/rop_worker/environments/m4s-u8-ifrows-01/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-u8-ifrows-01/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-q1/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-pr-ifrows-01/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-pr-ifrows-01/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-poc/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-poc/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-i4-ifrows-01/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-i4-ifrows-01/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-i1/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-d545-ifrows-01/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/m4s-d545-ifrows-01/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/c6s-pr-ifrows-01/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/c6s-pr-ifrows-01/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/worker.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/version_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/startstop.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/services_env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/service_functions.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/rop_worker_flower.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/rop_worker_celery.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/rop_worker_beat.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/rop_worker.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/requirements.txt: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/requirements-private.txt: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/preremovehook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/pip.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/logrotate_rop_worker: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/cronfile: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/.bashrc: remove failed: No such file or directory\\n  warning: file /var/opt/rop_worker/environments/all/.bash_profile: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_worker\\n  + ARTIFACTID=ICEropworker\\n  + CRONFILE=/var/opt/rop_worker/cronfile\\n  + GID=8021\\n  + GROUP=svc_ropworker\\n  + HOMEDIR=/home/svc-ropworker\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=preremovehook.sh\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=/var/opt/rop_worker/worker.sh\\n  + SYMLINK=\\n  + USER=svc_ropworker\\n  + USID=8021\\n  + SYSTEMD=rop_worker\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICEropworker\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICEropworker ']'\\n  + echo 'Removing sudo include file for: svc_ropworker'\\n  + rm /etc/sudoers.d/ICEropworker\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop_worker'\\n  + '[' -n /var/opt/rop_worker ']'\\n  + '[' /var/opt/rop_worker '!=' / ']'\\n  + '[' /var/opt/rop_worker '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop_worker\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-d545-ifrows-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifrows-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifroapi-01] => (item=rop-api-service) 
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Install selected component (Linux)] **************************************
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-d545-ifroapi-01] => (item=/tmp/ICEropapi-python-0.0.30.rpm)
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-d545-ifroapi-01] => (item=/tmp/ICEropapi-python-0.0.30.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-d545-ifroapi-01] => (item=ICEropapi-python)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-d545-ifroapi-01] => (item=ICEropapi-python)
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  Removing sudo include file for: svc-ropapi\\n  Removing application directory: /var/opt/rop_api_python/\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICEropapi-python-0.0.30-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_api_python/\\n  + ARTIFACTID=ICEropapi-python\\n  + CRONFILE=/var/opt/rop_api_python/cronfile\\n  + GID=1622\\n  + GROUP=svc-ropapi\\n  + HOMEDIR=/home/svc-ropapi\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc-ropapi\\n  + USID=1622\\n  + SYSTEMD=rop_api_python\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop_api_python//logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z rop_api_python ]]\\n  ++ systemctl is-enabled rop_api_python\\n  + is_service_enabled=enabled\\n  + [[ enabled == \\\\e\\\\n\\\\a\\\\b\\\\l\\\\e\\\\d ]]\\n  + systemctl disable rop_api_python\\n  Removed /etc/systemd/system/multi-user.target.wants/rop_api_python.service.\\n  + systemdfile=/usr/lib/systemd/system/rop_api_python.service\\n  + [[ -f /usr/lib/systemd/system/rop_api_python.service ]]\\n  + rm /usr/lib/systemd/system/rop_api_python.service\\n  + systemctl daemon-reload\\n  + '[' -n /var/opt/rop_api_python// ']'\\n  + runHook\\n  + '[' -f /var/opt/rop_api_python// ']'\\n  + exit 0\\n  warning: file /var/opt/rop_api_python/environments/m4s-u8/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-q1/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-pr/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-poc-zzrg-03/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-poc-zzrg-03/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-poc-zzrg-01/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-poc-zzrg-01/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-i4/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/m4s-d545/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/c6s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/c6s-pr/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/version_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/rop_api_python.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/rop.private.key: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/requirements.txt: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/pip.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/logrotate_rop_api_python: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/cronfile: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/certificate.pem: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/.bashrc: remove failed: No such file or directory\\n  warning: file /var/opt/rop_api_python/environments/all/.bash_profile: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_api_python/\\n  + ARTIFACTID=ICEropapi-python\\n  + CRONFILE=/var/opt/rop_api_python/cronfile\\n  + GID=1622\\n  + GROUP=svc-ropapi\\n  + HOMEDIR=/home/svc-ropapi\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc-ropapi\\n  + USID=1622\\n  + SYSTEMD=rop_api_python\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICEropapi-python\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICEropapi-python ']'\\n  + echo 'Removing sudo include file for: svc-ropapi'\\n  + rm /etc/sudoers.d/ICEropapi-python\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop_api_python/'\\n  + '[' -n /var/opt/rop_api_python/ ']'\\n  + '[' /var/opt/rop_api_python/ '!=' / ']'\\n  + '[' /var/opt/rop_api_python/ '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop_api_python/\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifrosc-01] => (item=rop-statuscenter-service) 
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Linux)] **************************************
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-d545-ifrosc-01] => (item=/tmp/ICEropstatuscenter-0.0.17.rpm)
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-d545-ifrosc-01] => (item=/tmp/ICEropstatuscenter-0.0.17.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-d545-ifrosc-01] => (item=ICEropstatuscenter)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-d545-ifrosc-01] => (item=ICEropstatuscenter)
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  Removing sudo include file for: svc-ropsc\\n  Removing application directory: /var/opt/rop_status_center/\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICEropstatuscenter-0.0.17-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_status_center/\\n  + ARTIFACTID=ICEropstatuscenter\\n  + CRONFILE=/var/opt/rop_status_center/cronfile\\n  + GID=1627\\n  + GROUP=svc-ropsc\\n  + HOMEDIR=/home/svc-ropsc\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc-ropsc\\n  + USID=1627\\n  + SYSTEMD=rop_status_center\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop_status_center//logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z rop_status_center ]]\\n  ++ systemctl is-enabled rop_status_center\\n  + is_service_enabled=enabled\\n  + [[ enabled == \\\\e\\\\n\\\\a\\\\b\\\\l\\\\e\\\\d ]]\\n  + systemctl disable rop_status_center\\n  Removed /etc/systemd/system/multi-user.target.wants/rop_status_center.service.\\n  + systemdfile=/usr/lib/systemd/system/rop_status_center.service\\n  + [[ -f /usr/lib/systemd/system/rop_status_center.service ]]\\n  + rm /usr/lib/systemd/system/rop_status_center.service\\n  + systemctl daemon-reload\\n  + '[' -n /var/opt/rop_status_center// ']'\\n  + runHook\\n  + '[' -f /var/opt/rop_status_center// ']'\\n  + exit 0\\n  warning: file /var/opt/rop_status_center/environments/m4s-u8/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-u8/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-q1/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-pr/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-poc/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-poc/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-i4/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-i4/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-d545/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/m4s-d545/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/c6s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/c6s-pr/.keep: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/version_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/rop_status_center.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/requirements.txt: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/pip.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/logrotate_rop_status_center: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/cronfile: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/.bashrc: remove failed: No such file or directory\\n  warning: file /var/opt/rop_status_center/environments/all/.bash_profile: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_status_center/\\n  + ARTIFACTID=ICEropstatuscenter\\n  + CRONFILE=/var/opt/rop_status_center/cronfile\\n  + GID=1627\\n  + GROUP=svc-ropsc\\n  + HOMEDIR=/home/svc-ropsc\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc-ropsc\\n  + USID=1627\\n  + SYSTEMD=rop_status_center\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICEropstatuscenter\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICEropstatuscenter ']'\\n  + echo 'Removing sudo include file for: svc-ropsc'\\n  + rm /etc/sudoers.d/ICEropstatuscenter\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop_status_center/'\\n  + '[' -n /var/opt/rop_status_center/ ']'\\n  + '[' /var/opt/rop_status_center/ '!=' / ']'\\n  + '[' /var/opt/rop_status_center/ '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop_status_center/\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [Ensure minimal facts for this host] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Select services for this host and phase] *********************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Stop selected component (Linux)] *****************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Stop selected component (Windows)] ***************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Download selected component containers] **********************************
+skipping: [m4s-d545-ifroui-01] => (item=rop-ui-service) 
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Linux)] **************************************
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-d545-ifroui-01] => (item=/tmp/ICErop_ui-0.0.35.rpm)
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-d545-ifroui-01] => (item=/tmp/ICErop_ui-0.0.35.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-d545-ifroui-01] => (item=ICErop_ui)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-d545-ifroui-01] => (item=ICErop_ui)
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  Removing sudo include file for: svc-ropui\\n  Removing application directory: /var/opt/rop-ui\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICErop_ui-0.0.35-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop-ui\\n  + ARTIFACTID=ICErop_ui\\n  + CRONFILE=\\n  + GID=1629\\n  + GROUP=svc-ropui\\n  + HOMEDIR=\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=/var/opt/rop-uiginx.sh\\n  + SYMLINK=\\n  + USER=svc-ropui\\n  + USID=1629\\n  + SYSTEMD=\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop-ui/logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z '' ]]\\n  + return\\n  + '[' -n /var/opt/rop-ui/ ']'\\n  + runHook\\n  + '[' -f /var/opt/rop-ui/ ']'\\n  + exit 0\\n  warning: file /var/opt/rop-ui/environments/m4s-u8ginx.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-u8/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-prginx.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-i4ginx.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-i4/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-d545ginx.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/m4s-d545/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/c6s-prginx.conf: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/c6s-pr/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/allginx.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/all/.bashrc: remove failed: No such file or directory\\n  warning: file /var/opt/rop-ui/environments/all/.bash_profile: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop-ui\\n  + ARTIFACTID=ICErop_ui\\n  + CRONFILE=\\n  + GID=1629\\n  + GROUP=svc-ropui\\n  + HOMEDIR=\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=/var/opt/rop-uiginx.sh\\n  + SYMLINK=\\n  + USER=svc-ropui\\n  + USID=1629\\n  + SYSTEMD=\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICErop_ui\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICErop_ui ']'\\n  + echo 'Removing sudo include file for: svc-ropui'\\n  + rm /etc/sudoers.d/ICErop_ui\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop-ui'\\n  + '[' -n /var/opt/rop-ui ']'\\n  + '[' /var/opt/rop-ui '!=' / ']'\\n  + '[' /var/opt/rop-ui '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop-ui\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [Install selected component (Windows)] ************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Linux)] ****************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Start selected component (Windows)] **************************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Linux)] *********************************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check selected component (Windows)] *******************************
+skipping: [m4s-d545-ifroui-01]
+
+PLAY [START + HEALTH (level-gated)] ********************************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroas-01]
+
+TASK [Prepare component levels for this host] **********************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Start services level-by-level (Linux)] ***********************************
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would start (Linux)] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_start_cmds": []
+}
+
+TASK [deploy_service : (check) AFTER start hooks] ******************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push simulated start summary (Linux)] *******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Reset async job list for start] *************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Start services (Linux) async] ***************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Track start async jobs and map commands] ****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Wait for start jobs] ************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build failed start details] *****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would start (Linux)] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_start_cmds": [
+        "sudo /var/opt/rop_worker/worker.sh start"
+    ]
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_start_cmds": []
+}
+
+TASK [deploy_service : (check) AFTER start hooks] ******************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push simulated start summary (Linux)] *******************
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Reset async job list for start] *************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Start services (Linux) async] ***************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+changed: [m4s-d545-ifrows-01] => (item=sudo /var/opt/rop_worker/worker.sh start)
+
+TASK [deploy_service : Track start async jobs and map commands] ****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j947597119448.3763397', 'results_file': '/home/svc_ansible_poc/.ansible_async/j947597119448.3763397', 'changed': True, 'failed_when_result': False, 'item': 'sudo /var/opt/rop_worker/worker.sh start', 'ansible_loop_var': 'item'})
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Wait for start jobs] ************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for start jobs (300 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for start jobs (299 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for start jobs (298 retries left).
+FAILED - RETRYING: [m4s-d545-ifrows-01]: Wait for start jobs (297 retries left).
+changed: [m4s-d545-ifrows-01] => (item=j947597119448.3763397)
+
+TASK [deploy_service : Build failed start details] *****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would start (Linux)] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_start_cmds": [
+        "sudo /usr/bin/systemctl start rop_api_python"
+    ]
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_start_cmds": [
+        "sudo /usr/bin/systemctl start rop_status_center"
+    ]
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_start_cmds": []
+}
+
+TASK [deploy_service : (check) AFTER start hooks] ******************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push simulated start summary (Linux)] *******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Reset async job list for start] *************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Start services (Linux) async] ***************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroui-01]
+changed: [m4s-d545-ifroapi-01] => (item=sudo /usr/bin/systemctl start rop_api_python)
+changed: [m4s-d545-ifrosc-01] => (item=sudo /usr/bin/systemctl start rop_status_center)
+
+TASK [deploy_service : Track start async jobs and map commands] ****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j294424422379.823270', 'results_file': '/home/svc_ansible_poc/.ansible_async/j294424422379.823270', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl start rop_api_python', 'ansible_loop_var': 'item'})
+ok: [m4s-d545-ifrosc-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j961549443708.820393', 'results_file': '/home/svc_ansible_poc/.ansible_async/j961549443708.820393', 'changed': True, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl start rop_status_center', 'ansible_loop_var': 'item'})
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Wait for start jobs] ************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroui-01]
+changed: [m4s-d545-ifroapi-01] => (item=j294424422379.823270)
+changed: [m4s-d545-ifrosc-01] => (item=j961549443708.820393)
+
+TASK [deploy_service : Build failed start details] *****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would start (Linux)] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_start_cmds": []
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_start_cmds": [
+        "sudo /var/opt/rop-uiginx.sh start"
+    ]
+}
+
+TASK [deploy_service : (check) AFTER start hooks] ******************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push simulated start summary (Linux)] *******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Reset async job list for start] *************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Start services (Linux) async] ***************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+changed: [m4s-d545-ifroui-01] => (item=sudo /var/opt/rop-uiginx.sh start)
+
+TASK [deploy_service : Track start async jobs and map commands] ****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01] => (item={'failed': False, 'started': 1, 'finished': 0, 'ansible_job_id': 'j715654809873.2947200', 'results_file': '/home/svc_ansible_poc/.ansible_async/j715654809873.2947200', 'changed': True, 'failed_when_result': False, 'item': 'sudo /var/opt/rop-uiginx.sh start', 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Wait for start jobs] ************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+changed: [m4s-d545-ifroui-01] => (item=j715654809873.2947200)
+
+TASK [deploy_service : Build failed start details] *****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrosc-01]
+
+TASK [Start services level-by-level (Windows)] *********************************
+skipping: [m4s-d545-ifroas-01] => (item=level=0) 
+skipping: [m4s-d545-ifroas-01] => (item=level=1) 
+skipping: [m4s-d545-ifroas-01] => (item=level=2) 
+skipping: [m4s-d545-ifroas-01] => (item=level=3) 
+skipping: [m4s-d545-ifroes-01] => (item=level=0) 
+skipping: [m4s-d545-ifroes-01] => (item=level=1) 
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifrows-01] => (item=level=0) 
+skipping: [m4s-d545-ifroes-01] => (item=level=2) 
+skipping: [m4s-d545-ifrows-01] => (item=level=1) 
+skipping: [m4s-d545-ifrows-01] => (item=level=2) 
+skipping: [m4s-d545-ifroes-01] => (item=level=3) 
+skipping: [m4s-d545-ifrows-01] => (item=level=3) 
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01] => (item=level=0) 
+skipping: [m4s-d545-ifroapi-01] => (item=level=1) 
+skipping: [m4s-d545-ifroapi-01] => (item=level=2) 
+skipping: [m4s-d545-ifroapi-01] => (item=level=3) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=0) 
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01] => (item=level=1) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=2) 
+skipping: [m4s-d545-ifroui-01] => (item=level=0) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=3) 
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01] => (item=level=1) 
+skipping: [m4s-d545-ifroui-01] => (item=level=2) 
+skipping: [m4s-d545-ifroui-01] => (item=level=3) 
+skipping: [m4s-d545-ifroui-01]
+
+TASK [Health-check level-by-level (Linux)] *************************************
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-d545-ifroas-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_health_cmds": []
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build failed health details] ****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifroui-01]
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push health summary (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-d545-ifroas-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_health_cmds": [
+        "for svc in rop_worker rop_worker_flower rop_worker_beat rop_worker_celery; do\\n  for i in {1..5}; do\\n    if systemctl is-active --quiet \\"$svc\\"; then\\n      break\\n    fi\\n    sleep 2\\n  done\\n  if ! systemctl is-active --quiet \\"$svc\\"; then\\n    echo \\"$svc not active\\"\\n    exit 2\\n  fi\\ndone"
+    ]
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_health_cmds": []
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifrows-01] => (item=for svc in rop_worker rop_worker_flower rop_worker_beat rop_worker_celery; do
+  for i in {1..5}; do
+    if systemctl is-active --quiet "$svc"; then
+      break
+    fi
+    sleep 2
+  done
+  if ! systemctl is-active --quiet "$svc"; then
+    echo "$svc not active"
+    exit 2
+  fi
+done)
+
+TASK [deploy_service : Build failed health details] ****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push health summary (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-d545-ifroas-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_health_cmds": [
+        "systemctl status rop_api_python"
+    ]
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_health_cmds": [
+        "systemctl status rop_status_center"
+    ]
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_health_cmds": []
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroui-01]
+ok: [m4s-d545-ifroapi-01] => (item=systemctl status rop_api_python)
+ok: [m4s-d545-ifrosc-01] => (item=systemctl status rop_status_center)
+
+TASK [deploy_service : Build failed health details] ****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push health summary (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-d545-ifroas-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroes-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrows-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroapi-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "_health_cmds": []
+}
+ok: [m4s-d545-ifroui-01] => {
+    "_health_cmds": [
+        "ps -ef | grep -i 'nginx: master' | grep -v grep &> /devull"
+    ]
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01] => (item=ps -ef | grep -i 'nginx: master' | grep -v grep &> /devull)
+
+TASK [deploy_service : Build failed health details] ****************************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroui-01]
+
+TASK [deploy_service : Push health summary (Linux)] ****************************
+ok: [m4s-d545-ifroas-01]
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [Health-check level-by-level (Windows)] ***********************************
+skipping: [m4s-d545-ifroas-01] => (item=level=0) 
+skipping: [m4s-d545-ifroes-01] => (item=level=0) 
+skipping: [m4s-d545-ifroas-01] => (item=level=1) 
+skipping: [m4s-d545-ifroes-01] => (item=level=1) 
+skipping: [m4s-d545-ifroes-01] => (item=level=2) 
+skipping: [m4s-d545-ifroas-01] => (item=level=2) 
+skipping: [m4s-d545-ifroes-01] => (item=level=3) 
+skipping: [m4s-d545-ifroas-01] => (item=level=3) 
+skipping: [m4s-d545-ifrows-01] => (item=level=0) 
+skipping: [m4s-d545-ifrows-01] => (item=level=1) 
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01] => (item=level=2) 
+skipping: [m4s-d545-ifroas-01]
+skipping: [m4s-d545-ifrows-01] => (item=level=3) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=0) 
+skipping: [m4s-d545-ifrows-01]
+skipping: [m4s-d545-ifroapi-01] => (item=level=0) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=1) 
+skipping: [m4s-d545-ifroapi-01] => (item=level=1) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=2) 
+skipping: [m4s-d545-ifroapi-01] => (item=level=2) 
+skipping: [m4s-d545-ifrosc-01] => (item=level=3) 
+skipping: [m4s-d545-ifrosc-01]
+skipping: [m4s-d545-ifroapi-01] => (item=level=3) 
+skipping: [m4s-d545-ifroapi-01]
+skipping: [m4s-d545-ifroui-01] => (item=level=0) 
+skipping: [m4s-d545-ifroui-01] => (item=level=1) 
+skipping: [m4s-d545-ifroui-01] => (item=level=2) 
+skipping: [m4s-d545-ifroui-01] => (item=level=3) 
+skipping: [m4s-d545-ifroui-01]
+
+PLAY [POST_DEPLOY cleanup and SE Tools] ****************************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifrows-01]
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifroapi-01]
+
+TASK [Run post_deploy role (SE Tools + cleanup)] *******************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifrosc-01]
+ok: [m4s-d545-ifroui-01]
+
+TASK [Run post_deploy role (SE Tools + cleanup)] *******************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Run Maven to download the artifact] ************************
+included: /runner/project/roles/post_deploy/tasks/run_setools.yml for m4s-d545-ifroes-01, m4s-d545-ifrows-01
+
+TASK [post_deploy : Set SE Tools execution stage] ******************************
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+
+TASK [Run post_deploy role (SE Tools + cleanup)] *******************************
+
+TASK [post_deploy : Debug SE Tools execution stage] ****************************
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "Starting execution stage: SETOOLS"
+}
+
+TASK [post_deploy : Run Maven to download the artifact] ************************
+
+TASK [post_deploy : Debug SE Tools execution stage] ****************************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "Starting execution stage: SETOOLS"
+}
+
+TASK [post_deploy : Run Maven to download the artifact] ************************
+included: /runner/project/roles/post_deploy/tasks/run_setools.yml for m4s-d545-ifroapi-01, m4s-d545-ifrosc-01
+
+TASK [post_deploy : Run Maven to download the artifact] ************************
+
+TASK [post_deploy : Skip SE Tools execution for Windows deployments] ***********
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+
+TASK [post_deploy : Set SE Tools execution stage] ******************************
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Run Maven to download the artifact] ************************
+included: /runner/project/roles/post_deploy/tasks/run_setools.yml for m4s-d545-ifroas-01, m4s-d545-ifroui-01
+
+TASK [post_deploy : Exit if SE Tools execution is not needed] ******************
+skipping: [m4s-d545-ifroes-01]
+skipping: [m4s-d545-ifrows-01]
+
+TASK [post_deploy : Set SE Tools execution stage] ******************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Debug SE Tools execution stage] ****************************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "Starting execution stage: SETOOLS"
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "Starting execution stage: SETOOLS"
+}
+
+TASK [post_deploy : Set SE Tools execution stage] ******************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Debug SE Tools execution stage] ****************************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "Starting execution stage: SETOOLS"
+}
+
+TASK [post_deploy : Determine sudo command based on package type] **************
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+
+TASK [post_deploy : Skip SE Tools execution for Windows deployments] ***********
+ok: [m4s-d545-ifroapi-01]
+
+TASK [post_deploy : Exit if SE Tools execution is not needed] ******************
+skipping: [m4s-d545-ifroapi-01]
+
+TASK [post_deploy : Skip SE Tools execution for Windows deployments] ***********
+ok: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Skip SE Tools execution for Windows deployments] ***********
+ok: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Set SE Tools wrapper command] ******************************
+ok: [m4s-d545-ifroes-01]
+ok: [m4s-d545-ifrows-01]
+
+TASK [post_deploy : Exit if SE Tools execution is not needed] ******************
+skipping: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Exit if SE Tools execution is not needed] ******************
+skipping: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Debug SE Tools execution stage] ****************************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "Starting execution stage: SETOOLS"
+}
+
+TASK [post_deploy : Determine sudo command based on package type] **************
+ok: [m4s-d545-ifroapi-01]
+
+TASK [post_deploy : Determine sudo command based on package type] **************
+ok: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Determine sudo command based on package type] **************
+ok: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Skip SE Tools execution for Windows deployments] ***********
+ok: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Set SE Tools wrapper command] ******************************
+ok: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Exit if SE Tools execution is not needed] ******************
+skipping: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Set SE Tools wrapper command] ******************************
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Determine sudo command based on package type] **************
+ok: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Set SE Tools wrapper command] ******************************
+ok: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Execute SE Tools wrapper command on all hosts] *************
+changed: [m4s-d545-ifrows-01]
+changed: [m4s-d545-ifroes-01]
+
+TASK [post_deploy : Debug SE Tools execution result] ***************************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": [
+        "Stage: SETOOLS",
+        "SE Tools execution result:",
+        []
+    ]
+}
+
+TASK [post_deploy : Execute SE Tools wrapper command on all hosts] *************
+changed: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Debug SE Tools execution result] ***************************
+ok: [m4s-d545-ifroes-01] => {
+    "msg": [
+        "Stage: SETOOLS",
+        "SE Tools execution result:",
+        []
+    ]
+}
+
+TASK [post_deploy : Clean up files after staging] ******************************
+included: /runner/project/roles/post_deploy/tasks/cleanup_artifacts.yml for m4s-d545-ifrows-01
+included: /runner/project/roles/post_deploy/tasks/cleanup_artifacts.yml for m4s-d545-ifroes-01
+
+TASK [post_deploy : Execute SE Tools wrapper command on all hosts] *************
+changed: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Debug SE Tools execution result] ***************************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": [
+        "Stage: SETOOLS",
+        "SE Tools execution result:",
+        []
+    ]
+}
+
+TASK [post_deploy : Gather list of downloaded artifacts from this host] ********
+ok: [m4s-d545-ifrows-01]
+
+TASK [post_deploy : Execute SE Tools wrapper command on all hosts] *************
+changed: [m4s-d545-ifroapi-01]
+
+TASK [post_deploy : Gather list of downloaded artifacts from this host] ********
+ok: [m4s-d545-ifroes-01]
+
+TASK [post_deploy : Debug host download list] **********************************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "Host m4s-d545-ifrows-01 has 1 downloaded artifacts: ['/tmp/ICEropworker-0.37.20.rpm']"
+}
+
+TASK [post_deploy : Debug SE Tools execution result] ***************************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": [
+        "Stage: SETOOLS",
+        "SE Tools execution result:",
+        []
+    ]
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": [
+        "Stage: SETOOLS",
+        "SE Tools execution result:",
+        []
+    ]
+}
+
+TASK [post_deploy : Clean up files after staging] ******************************
+
+TASK [post_deploy : Debug host download list] **********************************
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "Host m4s-d545-ifroes-01 has 1 downloaded artifacts: ['/tmp/ICErop_edgeservice-0.0.32.rpm']"
+}
+
+TASK [post_deploy : Clean up files after staging] ******************************
+included: /runner/project/roles/post_deploy/tasks/cleanup_artifacts.yml for m4s-d545-ifroui-01
+included: /runner/project/roles/post_deploy/tasks/cleanup_artifacts.yml for m4s-d545-ifroapi-01, m4s-d545-ifrosc-01
+
+TASK [post_deploy : Execute SE Tools wrapper command on all hosts] *************
+changed: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Gather list of downloaded artifacts from this host] ********
+ok: [m4s-d545-ifroapi-01]
+ok: [m4s-d545-ifrosc-01]
+
+TASK [post_deploy : Gather list of downloaded artifacts from this host] ********
+ok: [m4s-d545-ifroui-01]
+
+TASK [post_deploy : Debug SE Tools execution result] ***************************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": [
+        "Stage: SETOOLS",
+        "SE Tools execution result:",
+        []
+    ]
+}
+
+TASK [post_deploy : Debug host download list] **********************************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "Host m4s-d545-ifroapi-01 has 1 downloaded artifacts: ['/tmp/ICEropapi-python-0.0.30.rpm']"
+}
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "Host m4s-d545-ifrosc-01 has 1 downloaded artifacts: ['/tmp/ICEropstatuscenter-0.0.17.rpm']"
+}
+
+TASK [post_deploy : Debug host download list] **********************************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "Host m4s-d545-ifroui-01 has 1 downloaded artifacts: ['/tmp/ICErop_ui-0.0.35.rpm']"
+}
+
+TASK [post_deploy : Clean up files after staging] ******************************
+included: /runner/project/roles/post_deploy/tasks/cleanup_artifacts.yml for m4s-d545-ifroas-01
+
+TASK [post_deploy : Gather list of downloaded artifacts from this host] ********
+ok: [m4s-d545-ifroas-01]
+
+TASK [post_deploy : Debug host download list] **********************************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "Host m4s-d545-ifroas-01 has 1 downloaded artifacts: ['/tmp/ICErop-authentication-0.0.13.rpm']"
+}
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+changed: [m4s-d545-ifrows-01] => (item=/tmp/ICEropworker-0.37.20.rpm)
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+changed: [m4s-d545-ifroapi-01] => (item=/tmp/ICEropapi-python-0.0.30.rpm)
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+changed: [m4s-d545-ifroes-01] => (item=/tmp/ICErop_edgeservice-0.0.32.rpm)
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+changed: [m4s-d545-ifrosc-01] => (item=/tmp/ICEropstatuscenter-0.0.17.rpm)
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+changed: [m4s-d545-ifroui-01] => (item=/tmp/ICErop_ui-0.0.35.rpm)
+
+TASK [post_deploy : Debug cleanup result] **************************************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "Removed 1 artifacts for m4s-d545-ifrows-01 (if present)."
+}
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+
+TASK [post_deploy : Debug cleanup result] **************************************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "Removed 1 artifacts for m4s-d545-ifroapi-01 (if present)."
+}
+
+TASK [post_deploy : Debug cleanup result] **************************************
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "Removed 1 artifacts for m4s-d545-ifroes-01 (if present)."
+}
+
+TASK [post_deploy : Debug cleanup result] **************************************
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "Removed 1 artifacts for m4s-d545-ifrosc-01 (if present)."
+}
+
+TASK [Mark post_deploy attempted] **********************************************
+ok: [m4s-d545-ifrows-01] => {
+    "msg": "post_deploy attempted on m4s-d545-ifrows-01"
+}
+
+TASK [post_deploy : Debug cleanup result] **************************************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "Removed 1 artifacts for m4s-d545-ifroui-01 (if present)."
+}
+
+TASK [Mark post_deploy attempted] **********************************************
+ok: [m4s-d545-ifroapi-01] => {
+    "msg": "post_deploy attempted on m4s-d545-ifroapi-01"
+}
+ok: [m4s-d545-ifroes-01] => {
+    "msg": "post_deploy attempted on m4s-d545-ifroes-01"
+}
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+changed: [m4s-d545-ifroas-01] => (item=/tmp/ICErop-authentication-0.0.13.rpm)
+
+TASK [Mark post_deploy attempted] **********************************************
+ok: [m4s-d545-ifrosc-01] => {
+    "msg": "post_deploy attempted on m4s-d545-ifrosc-01"
+}
+
+TASK [post_deploy : Remove downloaded artifacts (Linux)] ***********************
+
+TASK [Mark post_deploy attempted] **********************************************
+ok: [m4s-d545-ifroui-01] => {
+    "msg": "post_deploy attempted on m4s-d545-ifroui-01"
+}
+
+TASK [post_deploy : Debug cleanup result] **************************************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "Removed 1 artifacts for m4s-d545-ifroas-01 (if present)."
+}
+
+TASK [Mark post_deploy attempted] **********************************************
+ok: [m4s-d545-ifroas-01] => {
+    "msg": "post_deploy attempted on m4s-d545-ifroas-01"
+}
+
+PLAY [Aggregate results and fail on errors] ************************************
+
+TASK [Collect stats (normalize shapes)] ****************************************
+ok: [localhost]
+
+TASK [Show summarized results] *************************************************
+ok: [localhost] => {
+    "msg": {
+        "failed_health": "0",
+        "failed_installs": "0",
+        "failed_starts": "0"
+    }
+}
+
+TASK [Fail if any install/start/health failures] *******************************
+skipping: [localhost]
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=39   changed=1    unreachable=0    failed=0    skipped=6    rescued=0    ignored=0   
+m4s-d545-ifroapi-01        : ok=112  changed=9    unreachable=0    failed=0    skipped=116  rescued=0    ignored=0   
+m4s-d545-ifroas-01         : ok=113  changed=9    unreachable=0    failed=0    skipped=103  rescued=0    ignored=0   
+m4s-d545-ifroes-01         : ok=113  changed=9    unreachable=0    failed=0    skipped=103  rescued=0    ignored=0   
+m4s-d545-ifrosc-01         : ok=112  changed=9    unreachable=0    failed=0    skipped=116  rescued=0    ignored=0   
+m4s-d545-ifroui-01         : ok=112  changed=9    unreachable=0    failed=0    skipped=116  rescued=0    ignored=0   
+m4s-d545-ifrows-01         : ok=112  changed=9    unreachable=0    failed=0    skipped=116  rescued=0    ignored=0   
