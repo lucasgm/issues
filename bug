@@ -1,21 +1,264 @@
-msg: >
-  The conditional check 'item.item.dest_path is search('\\.rpm$')' failed. The
-  error was: error while evaluating conditional (item.item.dest_path is
-  search('\\.rpm$')): 'dict object' has no attribute 'item'. 'dict object' has
-  no attribute 'item'
+# Download all containers for a single service on the current host.
+#roles/deploy_service/tasks/service_download.yml
+- ansible.builtin.setup: { gather_subset: [min] }
+  when: ansible_facts is not defined
+
+- name: Reset async job list for this service
+  ansible.builtin.set_fact:
+    download_async_jobs: []
+
+- name: Build download list
+  ansible.builtin.set_fact:
+    _dl_list: "{{ service.containers | default([]) }}"
+
+- name: Download each container (check-safe include)
+  ansible.builtin.include_tasks: download_artifact.yml
+  loop: "{{ _dl_list }}"
+  loop_control:
+    loop_var: container
+    label: "{{ container.artifactId | default(container.name) }}:{{ container.version }}"
+  vars:
+    art_url:   "https://artifactory.intcx.net/artifactory"
+    art_token: "{{ artifactory_password }}"
+
+# After spawning async downloads per container, wait for completion and record RPMs
+- name: Wait for all async downloads to finish
+  ansible.builtin.async_status:
+    jid: "{{ job.ansible_job_id }}"
+  register: _dl_wait
+  until: _dl_wait.finished
+  retries: 450
+  delay: 2
+  loop: "{{ download_async_jobs | default([]) }}"
+  loop_control:
+    loop_var: job
+    label: "{{ job.dest_path }}"
+  when:
+    - (download_async_jobs | default([]) | length) > 0
+
+- name: Build jobId -> dest map
+  ansible.builtin.set_fact:
+    _dl_id_dest_map: >-
+      {%- set m = {} -%}
+      {%- for j in (download_async_jobs | default([])) -%}
+        {%- set _ = m.update({ (j.ansible_job_id | string): (j.dest_path | default('')) }) -%}
+      {%- endfor -%}
+      {{ m }}
+  when: (download_async_jobs | default([]) | length) > 0
+
+- name: Collate completed RPM downloads
+  ansible.builtin.set_fact:
+    _dl_completed_rpm_paths: >-
+      {%- set out = [] -%}
+      {%- for r in (_dl_wait.results | default([])) -%}
+        {%- set jid = r.ansible_job_id | string -%}
+        {%- set dest = _dl_id_dest_map.get(jid, r.result.dest | default('')) -%}
+        {%- if (r.finished | default(false)) and not (r.failed | default(false)) and (dest is search('\\.rpm$')) -%}
+          {%- set _ = out.append(dest) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out | unique }}
+  when:
+    - _dl_wait is defined
+    - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+
+- name: Record completed RPM paths
+  ansible.builtin.set_fact:
+    downloaded_rpms: "{{ (downloaded_rpms | default([])) + (_dl_completed_rpm_paths | default([])) | unique }}"
+  when: _dl_completed_rpm_paths is defined and (_dl_completed_rpm_paths | length) > 0
+=======================================================================================
+#roles/deploy_service/tasks/stop_only_linux.yml
+- name: Build stop/stopHealth (Linux)
+  ansible.builtin.set_fact:
+    _stop: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='stop') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
+      }}
+    _stophealth: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='stopHealth') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
+      }}
+
+- block:
+    - name: (check) would stop (Linux)
+      ansible.builtin.debug: { var: _stop }
+    - name: (check) would verify stopped (Linux)
+      ansible.builtin.debug: { var: _stophealth }
+  when: ansible_check_mode | default(false)
+
+- block:
+    - name: Reset async job list for stop
+      ansible.builtin.set_fact:
+        _stop_jobs: []
+
+    - name: Stop services (Linux) async
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _stop }}"
+      async: 600
+      poll: 0
+      throttle: 5
+      register: _stop_async
+      failed_when: false
+      changed_when: true
+
+    - name: Track stop async jobs
+      ansible.builtin.set_fact:
+        _stop_jobs: "{{ _stop_jobs + [ _stop_async_item.ansible_job_id ] }}"
+      loop: "{{ _stop_async.results | default([]) }}"
+      loop_control:
+        loop_var: _stop_async_item
+
+    - name: Wait for stop jobs
+      ansible.builtin.async_status:
+        jid: "{{ jid }}"
+      register: _stop_wait
+      until: _stop_wait.finished
+      retries: 180
+      delay: 2
+      loop: "{{ _stop_jobs }}"
+      loop_control:
+        loop_var: jid
+
+    - name: Verify stopped (Linux)
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _stophealth }}"
+      register: _stop_health_out
+      failed_when: false
+      changed_when: false
+  when: not (ansible_check_mode | default(false))
+
+============================================================================================
+#roles/deploy_service/tasks/start_only_linux.yml
+- name: Build start & hooks (Linux)
+  ansible.builtin.set_fact:
+    _start_cmds: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='start') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
+      }}
+    _start_before: >-
+      {{
+        phase_services | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','START')
+        | selectattr('runStage','equalto','BEFORE')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+    _start_after: >-
+      {{
+        phase_services | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','START')
+        | selectattr('runStage','equalto','AFTER')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+
+- block:
+    - name: (check) BEFORE start hooks
+      ansible.builtin.debug: { var: _start_before }
+      when: _start_before | length > 0
+    - name: (check) would start (Linux)
+      ansible.builtin.debug: { var: _start_cmds }
+    - name: (check) AFTER start hooks
+      ansible.builtin.debug: { var: _start_after }
+      when: _start_after | length > 0
+    - name: Push simulated start summary (Linux)
+      ansible.builtin.set_fact:
+        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': false} ] }}"
+      when: ansible_check_mode | default(false)
+
+- block:
+    - name: BEFORE start hooks
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _start_before }}"
+      failed_when: false
+      changed_when: true
+      when: _start_before | length > 0
+
+    - name: Reset async job list for start
+      ansible.builtin.set_fact:
+        _start_jobs: []
+        _start_id_cmd_map: {}
+
+    - name: Start services (Linux) async
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _start_cmds }}"
+      async: 600
+      poll: 0
+      throttle: 5
+      register: _start_async
+      failed_when: false
+      changed_when: true
+
+    - name: Track start async jobs and map commands
+      ansible.builtin.set_fact:
+        _start_jobs: "{{ _start_jobs + [ _start_async_item.ansible_job_id ] }}"
+        _start_id_cmd_map: "{{ _start_id_cmd_map | default({}) | combine({ (_start_async_item.ansible_job_id | string): (_start_async_item.item | string) }) }}"
+      loop: "{{ _start_async.results | default([]) }}"
+      loop_control:
+        loop_var: _start_async_item
+
+    - name: Wait for start jobs
+      ansible.builtin.async_status:
+        jid: "{{ jid }}"
+      register: _start_wait
+      until: _start_wait.finished
+      retries: 300
+      delay: 2
+      loop: "{{ _start_jobs }}"
+      loop_control:
+        loop_var: jid
+
+    - name: Build failed start details
+      ansible.builtin.set_fact:
+        _failed_start_details: >-
+          {%- set out = [] -%}
+          {%- for r in (_start_wait.results | default([])) -%}
+            {%- set rc = r.rc | default(r.result.rc | default(0)) -%}
+            {%- set failed = r.failed | default(r.result.failed | default(false)) -%}
+            {%- set cmd = _start_id_cmd_map[(r.ansible_job_id | string)] | default(r.ansible_job_id) -%}
+            {%- set stdout = (r.stdout | default(r.result.stdout | default(''))) | trim -%}
+            {%- set stderr = (r.stderr | default(r.result.stderr | default(''))) | trim -%}
+            {%- if failed or (rc | int != 0) -%}
+              {%- set _ = out.append({'item': cmd, 'rc': rc, 'stdout': stdout, 'stderr': stderr}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+      when: (_start_wait.results | default([]) | length) > 0
+
+    - name: Debug failed starts (rc/stdout/stderr)
+      ansible.builtin.debug:
+        var: _failed_start_details
+      when: _failed_start_details is defined and _failed_start_details | length > 0
+
+    - name: Fail if any start commands failed
+      ansible.builtin.fail:
+        msg: >-
+          Start failures detected on {{ inventory_hostname }}:
+          {{ _failed_start_details | map(attribute='item') | join(' | ') }}
+      when: _failed_start_details is defined and _failed_start_details | length > 0
+
+    - name: AFTER start hooks
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _start_after }}"
+      failed_when: false
+      changed_when: true
+      when: _start_after | length > 0
+
+    - name: Push start summary (Linux)
+      ansible.builtin.set_fact:
+        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': (_failed_start_details is defined and (_failed_start_details | length) > 0), 'health_fail': false } ] }}"
+      when: not (ansible_check_mode | default(false))
 
 
-  The error appears to be in
-  '/runner/project/roles/deploy_service/tasks/service_download.yml': line 39,
-  column 3, but may
-
-  be elsewhere in the file depending on the exact syntax problem.
-
-
-  The offending line appears to be:
-
-
-
-  - name: Record completed RPM paths
-    ^ here
-_ansible_no_log: false
