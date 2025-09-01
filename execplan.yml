@@ -1,3 +1,26 @@
+- name: rop-auth-service
+  type: SERVICE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.rop.rop_authentication
+      artifactId: ICErop-authentication
+      version: 0.0.13
+      rpmName: ICErop-authentication
+      serviceCommands:
+        health: systemctl status rop_authentication
+        start: sudo /usr/bin/systemctl start rop_authentication
+        stop: sudo /usr/bin/systemctl stop rop_authentication
+        stopHealth: '! systemctl status rop_authentication'
+  serverFilters:
+    - m4s-d545-ifroas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK
 - name: rop-edge-service
   type: SERVICE
   dependsOn: []
