@@ -1,98 +1,239 @@
-ansible_connection: winrm
-ansible_user: "svc-windeploy-aap@users.ad"
-ansible_port: 5986
-ansible_winrm_transport: ntlm
-ansible_winrm_server_cert_validation: ignore
+# roles/deploy_service/tasks/download_artifact.yml
+# Inputs:
+#   container: { type, groupId, artifactId, version, name? }
+#   art_url, art_token  (or artifactory_url / artifactory_token)
+# Exports (facts on the host):
+#   dest_path, final_url, download_status
+#   downloaded_rpms (list of RPM paths for single-line install later)
 
-all.yml
-ansible_connection: ssh
-ansible_user: svc_ansible_poc
+- name: Gather minimal facts (for os_family)
+  ansible.builtin.setup:
+    gather_subset: [min]
+  when: ansible_facts is not defined
 
-//inventory.yml
-all:
-  children:
-    ifro_api:
-      hosts:
-        m4s-d545-ifroapi-01.intcx.net:
-    ifro_as:
-      hosts:
-        m4s-d545-ifroas-01.intcx.net:
-    ifro_es:
-      hosts:
-        m4s-d545-ifroes-01.intcx.net:
-    ifro_sc:
-      hosts:
-        m4s-d545-ifrosc-01.intcx.net:
-    ifro_ui:
-      hosts:
-        m4s-d545-ifroui-01.intcx.net:
-    ifro_ws:
-      hosts:
-        m4s-d545-ifrows-01.intcx.net:
-    tst_one:
-      hosts:
-        m4s-poc15-zzpr-01.adm.intcx.net:
-    tst_two:
-      hosts:
-        m4s-poc15-zzpr-02.adm.intcx.net:
-    tst_tree:
-      hosts:
-        m4s-poc15-zzpr-03.adm.intcx.net: 
-    windows:
-      children:    
-    tst_win:
-       hosts:
-         m4s-poc-zzrw-01.adm.intcx.net:
-       vars:  
-         ansible_connection: winrm
-         ansible_port: 5986
-         ansible_winrm_transport: basic
-         ansible_winrm_server_cert_validation: ignore
+- name: Normalise Artifactory vars
+  ansible.builtin.set_fact:
+    _art_url: "{{ art_url | default(artifactory_url) }}"
+    _art_tok: "{{ art_token | default(artifactory_token) }}"
 
-    local:
-      hosts:
-        localhost:
-          ansible_connection: local
+# ---- helpers first -----------------------------------------------------------
+- name: Derive artifact id and extension
+  ansible.builtin.set_fact:
+    _artifact_id: "{{ container.artifactId | default(container.name) }}"
+    _ext: "{{ (container.type | lower) }}"
 
-fields:
-  - id: username
-    label: Username
-    type: string
-  - id: password
-    label: Password
-    type: string
-    secret: true
-    ask_at_runtime: true
-  - id: ssh_key_data
-    label: SSH Private Key
-    type: string
-    format: ssh_private_key
-    secret: true
-    multiline: true
-  - id: ssh_public_key_data
-    label: Signed SSH Certificate
-    type: string
-    multiline: true
-    secret: true
-  - id: ssh_key_unlock
-    label: Private Key Passphrase
-    type: string
-    secret: true
-    ask_at_runtime: true
-  - id: become_method
-    label: Privilege Escalation Method
-    type: string
-    help_text: >-
-      Specify a method for "become" operations. This is equivalent to specifying
-      the --become-method Ansible parameter.
-  - id: become_username
-    label: Privilege Escalation Username
-    type: string
-  - id: become_password
-    label: Privilege Escalation Password
-    type: string
-    secret: true
-    ask_at_runtime: true
-Injector configuration
+- name: Build cache key for this artefact
+  ansible.builtin.set_fact:
+    _cache_key: "{{ container.groupId ~ ':' ~ _artifact_id ~ ':' ~ container.version ~ ':' ~ _ext }}"
 
+- name: Try Artifactory URL from localhost cache
+  ansible.builtin.set_fact:
+    final_url: "{{ hostvars['localhost'].final_url_cache[_cache_key] | default('') }}"
+  when: hostvars['localhost'].final_url_cache is defined
 
+- name: Determine OS family (lowercased)
+  ansible.builtin.set_fact:
+    _osfam: "{{ (ansible_facts.os_family | default('')) | lower }}"
+
+- name: Compute destination directory
+  ansible.builtin.set_fact:
+    dest_dir: "{{ 'C:\\\\Temp' if _osfam == 'windows' else '/tmp' }}"
+
+- name: Compute filename
+  ansible.builtin.set_fact:
+    dest_filename: "{{ _artifact_id ~ '-' ~ container.version ~ '.' ~ _ext }}"
+
+- name: Compute full destination path
+  ansible.builtin.set_fact:
+    dest_path: >-
+      {{
+        (dest_dir ~ '\\' ~ dest_filename) if _osfam == 'windows'
+        else (dest_dir ~ '/' ~ dest_filename)
+      }}
+
+- name: Assert dest_path is a valid string
+  ansible.builtin.assert:
+    that:
+      - dest_path is string
+      - (dest_path | length) > 1
+    fail_msg: "Computed dest_path is invalid: {{ dest_path | default('undefined') }}"
+
+# ── Check mode: no I/O ───────────────────────────────────────────────────────
+- block:
+    - ansible.builtin.debug:
+        msg: >-
+          (check mode) Would search {{ _art_url }} for
+          {{ container.groupId }}:{{ _artifact_id }}:{{ container.version }}:{{ _ext }}
+          and download to {{ dest_path }}
+    - ansible.builtin.set_fact:
+        final_url: ~
+        download_status: "skipped (check mode)"
+      changed_when: false
+  when: ansible_check_mode | default(false)
+
+# ── Real work ────────────────────────────────────────────────────────────────
+- block:
+    - name: Build GAVC search URL (no whitespace)
+      ansible.builtin.set_fact:
+        search_url: "{{ _art_url ~ '/api/search/gavc'
+          ~ '?g=' ~ (container.groupId | urlencode)
+          ~ '&a=' ~ (_artifact_id | urlencode)
+          ~ '&v=' ~ (container.version | urlencode)
+          ~ '&p=' ~ (_ext | urlencode) }}"
+      changed_when: false
+      delegate_to: localhost
+      when: (final_url | default('') | length) == 0
+
+    - name: Search Artifactory (GAVC)
+      ansible.builtin.uri:
+        url: "{{ search_url }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ _art_tok }}"
+        return_content: true
+      register: gavc_search
+      delegate_to: localhost
+      retries: 3
+      delay: 3
+      until: gavc_search.status | default(0) == 200
+      changed_when: false
+      when: (final_url | default('') | length) == 0
+
+    - name: Get first downloadable URL
+      ansible.builtin.set_fact:
+        final_url: >-
+          {{
+            gavc_search.json.results | default([])
+            | map(attribute='uri')
+            | select('search', '\.' ~ _ext ~ '$')
+            | map('regex_replace', '/api/storage', '')
+            | first
+          }}
+      delegate_to: localhost
+      changed_when: false
+      when: (final_url | default('') | length) == 0
+
+    - name: Fail early if nothing found
+      ansible.builtin.assert:
+        that: final_url is string and final_url | length > 0
+        fail_msg: "No downloadable {{ _ext }} found for {{ container.groupId }}:{{ _artifact_id }}:{{ container.version }}"
+
+    # Linux
+    - name: Download artefact (Linux)
+      ansible.builtin.get_url:
+        url:  "{{ final_url }}"
+        dest: "{{ dest_path }}"
+        mode: "0644"
+        headers:
+          Authorization: "Bearer {{ _art_tok }}"
+      async: 900
+      poll: 0
+      throttle: 5
+      register: _dl_async
+      when: _osfam != 'windows'
+
+    - name: Track async download job
+      ansible.builtin.set_fact:
+        download_async_jobs: "{{ (download_async_jobs | default([])) + [ {'ansible_job_id': _dl_async.ansible_job_id, 'dest_path': dest_path} ] }}"
+      when:
+        - _osfam != 'windows'
+        - _dl_async is defined
+
+    # Windows
+    - block:
+        - ansible.windows.win_file:
+            path: C:\\Temp
+            state: directory
+        - ansible.windows.win_get_url:
+            url:  "{{ final_url }}"
+            dest: "{{ dest_path }}"
+            headers:
+              Authorization: "Bearer {{ _art_tok }}"
+      when: _osfam == 'windows'
+
+    - name: Mark download result
+      ansible.builtin.set_fact:
+        download_status: "{{ (final_url is defined) | ternary('queued','skipped') }}"
+      changed_when: false
+
+    # Accumulation moved to service_download.yml after async wait
+
+  rescue:
+    - name: Fail download with details
+      ansible.builtin.fail:
+        msg: >-
+          Download failed for {{ container.groupId }}:{{ _artifact_id | default(container.artifactId | default(container.name)) }}:{{ container.version }}:{{ _ext | default(container.type) }}
+          on host {{ inventory_hostname }}.
+          dest: {{ dest_path | default('n/a') }}
+          search_url: {{ search_url | default(_art_url | default('n/a')) }}
+          error: {{ (gavc_search.msg | default('')) | string | trim }}
+  when: not (ansible_check_mode | default(false))
+
+=======================================================
+# roles/deploy_service/tasks/host_install_batch_windows.yml
+
+# Collect Windows containers by type
+- name: Classify Windows containers (CHOCO/ZIP)
+  ansible.builtin.set_fact:
+    _choco_items: >-
+      {{ phase_services | map(attribute='containers') | sum(start=[])
+         | selectattr('type','defined') | selectattr('type','!=', None)
+         | selectattr('type','match','(?i)^choco$') | list }}
+    _zip_items: >-
+      {{ phase_services | map(attribute='containers') | sum(start=[])
+         | selectattr('type','defined') | selectattr('type','!=', None)
+         | selectattr('type','match','(?i)^zip$') | list }}
+
+# CHOCO installs
+- name: Ensure Chocolatey packages are installed
+  ansible.windows.win_shell: >-
+    choco install {{ item.artifactId }} {{ (item.version | default('') | trim) | ternary('--version ' ~ (item.version | trim), '') }} -y --no-progress
+  args:
+    executable: PowerShell.exe
+  loop: "{{ _choco_items | default([]) }}"
+  register: choco_result
+  changed_when: >-
+    'already installed' not in (
+      ((choco_result.stdout | default('')) ~ (choco_result.stderr | default('')))
+      | lower
+    )
+  when: (_choco_items | default([]) | length) > 0
+
+# ZIP installs
+- name: Ensure ZIP install directories exist
+  ansible.windows.win_file:
+    path: "{{ item.installLocation }}"
+    state: directory
+  loop: "{{ _zip_items | default([]) }}"
+  when:
+    - (_zip_items | default([]) | length) > 0
+    - item.installLocation is defined
+
+- name: Unzip artifacts to installLocation
+  ansible.windows.win_unzip:
+    src: "{{ 'C:\\Temp\\' ~ (item.artifactId | default(item.name)) ~ '-' ~ item.version ~ '.zip' }}"
+    dest: "{{ item.installLocation }}"
+    force: true
+  loop: "{{ _zip_items | default([]) }}"
+  register: _unzip_run
+  when: (_zip_items | default([]) | length) > 0
+
+- name: Run post-unzip PowerShell commands (if provided)
+  ansible.windows.win_shell: "{{ item.postUnZipCmd }}"
+  args:
+    executable: PowerShell.exe
+  loop: "{{ _zip_items | default([]) }}"
+  register: _post_zip_run
+  changed_when: true
+  when:
+    - (_zip_items | default([]) | length) > 0
+    - item.postUnZipCmd is defined
+
+- name: Record install summary (Windows)
+  ansible.builtin.set_stats:
+    aggregate: true
+    data:
+      install_summary:
+        host: "{{ inventory_hostname }}"
+        success_artifacts: []
+        failed_artifacts: []
