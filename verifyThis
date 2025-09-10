@@ -1,0 +1,24 @@
+
+Used 1 reference
+Yes, if your Ansible playbook and its supporting roles/tasks are designed to process the execplan.yml structure—including dependsOn, serverFilter, and other orchestration fields—then the orchestration logic is handled by your playbook code.
+
+What This Means
+The playbook reads execplan.yml.
+It interprets dependencies (dependsOn), server filters (serverFilter), and lifecycle actions.
+For expressions like ice.host.name=${ice.host.name} and becwallet-server, the playbook (or its roles) should:
+Match the current host against ${ice.host.name}.
+Check if the host is tagged as becwallet-server.
+Enforce the dependency order and only run actions on the correct hosts.
+Is Your Playbook Handling This?
+If your playbook includes logic to:
+
+Parse and resolve dependencies and filters from execplan.yml
+Dynamically select hosts and components based on those filters
+Enforce install/start/stop order according to dependencies
+Then yes, the orchestration is handled automatically.
+
+If not, you may need to add or improve this orchestration logic.
+
+Summary:
+If your playbook is built to process these orchestration fields, you do not need to manually interpret them—the playbook will handle it.
+If you are unsure, review your playbook and roles to confirm they process dependsOn and serverFilter as described.
