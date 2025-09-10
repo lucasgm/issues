@@ -1,160 +1,1329 @@
-- name: rop-auth-service
+- name: airflowdags
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: apigateway
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: becjava-windows
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: CHOCO
+      groupId: com.java.jdk-8u181
+      artifactId: ICE-choco-jdk-8u181-x64
+      version: 1.0.3
+      rpmName: ""
+      containerType: CHOCO
+  serverFilters:
+    - m4s-q35-cums-01
+  lifecycle:
+    - INSTALL
+- name: becjboss-windows
+  type: PACKAGE
+  dependsOn:
+    - componentName: becjava-windows
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: CHOCO
+      groupId: com.theice.re.tools
+      artifactId: ICEchoco-jboss6.4
+      version: 6.4.1
+      rpmName: ""
+      containerType: CHOCO
+  serverFilters:
+    - m4s-q35-cums-01
+  lifecycle:
+    - INSTALL
+- name: becwallet-windows
+  type: PACKAGE
+  dependsOn:
+    - componentName: becjboss-windows
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: ZIP
+      groupId: com.theice.bec
+      artifactId: ICEbec-wallet-distribution
+      version: 2.0.0.117
+      rpmName: ""
+      installLocation: D:\chillo-deploy\becwallet-windows
+      postUnZipCmd: cd D:\\chillo-deploy\\becwallet-windows ; .\install.ps1
+      containerType: ZIP
+  serverFilters:
+    - m4s-q35-cums-01
+  lifecycle:
+    - DOWNLOAD
+    - INSTALL
+- name: calibration
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: clearing-ops-sudo
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.clearing-ops-sudo
+      artifactId: ICEclearing-ops-sudo
+      version: 3.0.1
+      rpmName: ICEclearing-ops-sudo
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuaas-01
+    - m4s-q35-cubas-01
+    - m4s-q35-cubdb-01
+    - m4s-q35-cucas-01
+    - m4s-q35-cuodb-01
+  lifecycle:
+    - DOWNLOAD
+- name: configserver
   type: SERVICE
   dependsOn: []
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.rop_authentication
-      artifactId: ICErop-authentication
-      version: 0.0.13
-      rpmName: ICErop-authentication
+      groupId: com.theice.clearing
+      artifactId: ICEConfigServer-Linux
+      version: 9.3.6.1
+      rpmName: ICEConfigServer-Linux
       serviceCommands:
-        health: systemctl status rop_authentication
-        start: sudo /usr/bin/systemctl start rop_authentication
-        stop: sudo /usr/bin/systemctl stop rop_authentication
-        stopHealth: '! systemctl status rop_authentication'
+        health: ps -ef | grep [M]onitoringID=config-server &>/dev/null && curl -v --insecure --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused https://localhost:28080
+        start: /usr/bin/sudo /var/opt/config-server/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/config-server/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep [M]onitoringID=config-server &>/dev/null'
+      containerType: RPM
   serverFilters:
-    - m4s-d545-ifroas-01
+    - m4s-q35-cucfg-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: fec-gui
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: fec-pmma
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: fec-svc-admin-ui
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: fsm
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: iceamazoncorretto.17.0.1.12.1
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: iceclearingwallet-linux
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: fec-apache-fecadmin
+  type: SERVICE
+  dependsOn:
+    - componentName: fec-svc-admin-ui
+      serverFilter: fec-svc-admin-ui-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceamazoncorretto.17.0.1.12.1
+      serverFilter: ( ice.host.name=${ice.host.name} and fec-java-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      serverFilter: ( ice.host.name=${ice.host.name} and fec-wallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-fecadmin
+      artifactId: ICEapache-fecadmin
+      version: 3.0.1
+      rpmName: ICEapache-fecadmin
+      serviceCommands:
+        health: ps -ef | grep -i fecadmin|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-fecadmin start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-fecadmin stop && sleep 10
+        stopHealth: '! ps -ef | grep -i fecadmin|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: fec-apache-fecgui
+  type: SERVICE
+  dependsOn:
+    - componentName: fec-gui
+      serverFilter: fec-fecgui-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceamazoncorretto.17.0.1.12.1
+      serverFilter: ( ice.host.name=${ice.host.name} and fec-java-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      serverFilter: ( ice.host.name=${ice.host.name} and fec-wallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-fecclientgui.rpm
+      artifactId: ICEapache-fecclientgui
+      version: 3.0.8
+      rpmName: ICEapache-fecclientgui
+      serviceCommands:
+        health: ps -ef |grep -i apache| grep -i fecclientgui|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-fecclientgui start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-fecclientgui stop && sleep 10
+        stopHealth: '! ps -ef |grep -i apache| grep -i fecclientgui|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: fec-apache-pmma
+  type: SERVICE
+  dependsOn:
+    - componentName: fec-pmma
+      serverFilter: fec-pmma-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceamazoncorretto.17.0.1.12.1
+      serverFilter: ( ice.host.name=${ice.host.name} and fec-java-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      serverFilter: ( ice.host.name=${ice.host.name} and fec-wallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-pmma
+      artifactId: ICEapache-pmma
+      version: 3.0.1
+      rpmName: ICEapache-pmma
+      serviceCommands:
+        health: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-pmma start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-pmma stop && sleep 10
+        stopHealth: '! ps -ef |grep -i apache| grep -i pmma|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: icerefloader
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: imc
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: imcfileloader
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: irmdbtools
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: marginreport
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: marginservice
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet-windows
+      reverseDependency: false
+  actionCommands: []
+  containers:
+    - type: ZIP
+      groupId: com.theice.marginservice
+      artifactId: ICEmarginservice-distribution
+      version: 9.3.6.0
+      rpmName: ""
+      serviceCommands:
+        health: if (((nssm status marginservice) | Select-String "SERVICE_RUNNING")) { Exit 0} else {Exit 1}
+        start: nssm start marginservice; Start-Sleep -Seconds 60
+        stop: Start-Job -ScriptBlock {nssm stop marginservice}; Start-Sleep -Seconds 60
+        stopHealth: if (((nssm status marginservice) | Select-String "SERVICE_STOPPED")) { Exit 0} else {Exit 1}
+      installLocation: D:\chillo-deploy\marginservice
+      postUnZipCmd: cd D:\\chillo-deploy\\marginservice ; .\install.ps1
+      containerType: ZIP
+  serverFilters:
+    - m4s-q35-cums-01
   lifecycle:
     - STOP
     - DOWNLOAD
     - INSTALL
     - START
     - HEALTH_CHECK
-- name: rop-edge-service
+- name: oracle-usr
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.oracle-usr
+      artifactId: ICEoracle-usr
+      version: 1.0.16
+      rpmName: ICEoracle-usr
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuaas-01
+    - m4s-q35-cubas-01
+    - m4s-q35-cucas-01
+  lifecycle:
+    - DOWNLOAD
+- name: oraclefatclient
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: portfoliomanager
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: risk-apache-apex
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-apexrisk.rpm
+      artifactId: ICEapache-apexrisk
+      version: 3.0.2
+      rpmName: ICEapache-apexrisk
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - DOWNLOAD
+- name: riskcache
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: riskmodel
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: scaling
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: apache-irm2
+  type: SERVICE
+  dependsOn:
+    - componentName: airflowdags
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: apigateway
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: calibration
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: fsm
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: icerefloader
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: imc
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: imcfileloader
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: irmdbtools
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: marginreport
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: portfoliomanager
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: riskcache
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: riskmodel
+      reverseDependency: false
+      orchestrationOnly: true
+    - componentName: scaling
+      reverseDependency: false
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-irm2
+      artifactId: ICEapache-irm2
+      version: 3.0.0
+      rpmName: ICEapache-irm2
+      serviceCommands:
+        health: ps -ef | grep irm2 &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-irm2 start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-irm2 stop && sleep 10
+        stopHealth: '! ps -ef | grep irm2 &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-apache-ops-console
   type: SERVICE
   dependsOn: []
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.edgeservice
-      artifactId: ICErop_edgeservice
-      version: 0.0.32
-      rpmName: ICErop_edgeservice
+      groupId: com.theice.apache.apache-deliveryopsconsole
+      artifactId: ICEapache-deliveryopsconsole
+      version: 3.0.5
+      rpmName: ICEapache-deliveryopsconsole
       serviceCommands:
-        health: systemctl status rop_edgeservice
-        start: sudo /usr/bin/systemctl start rop_edgeservice
-        stop: sudo /usr/bin/systemctl stop rop_edgeservice
-        stopHealth: '! systemctl status rop_edgeservice'
+        health: ps -ef | grep -i deliveryopsconsole | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-deliveryopsconsole start
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-deliveryopsconsole stop
+        stopHealth: '! ps -ef | grep -i deliveryopsconsole | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
   serverFilters:
-    - m4s-d545-ifroes-01
+    - m4s-q35-cuws-01
   lifecycle:
-    - STOP
     - DOWNLOAD
-    - INSTALL
     - START
     - HEALTH_CHECK
-- name: rop-worker-service
+- name: sdp-haproxy-softdeliveryplatform
   type: SERVICE
-  dependsOn:
-    - componentName: rop-edge-service
-      reverseDependency: false
+  dependsOn: []
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.rop_worker
-      artifactId: ICEropworker
-      version: 0.37.20
-      rpmName: ICEropworker
+      groupId: com.theice.haproxy-haproxy-softdeliveryplatform
+      artifactId: ICEhaproxy-softdeliveryplatform
+      version: 1.0.4
+      rpmName: ICEhaproxy-softdeliveryplatform
       serviceCommands:
-        health: |-
-            for svc in rop_worker rop_worker_flower rop_worker_beat rop_worker_celery; do
-              for i in {1..5}; do
-                if systemctl is-active --quiet "$svc"; then
-                  break
-                fi
-                sleep 2
-              done
-              if ! systemctl is-active --quiet "$svc"; then
-                echo "$svc not active"
-                exit 2
-              fi
-            done
-        start: sudo /var/opt/rop_worker/worker.sh start
-        stop: sudo /var/opt/rop_worker/worker.sh stop
-        stopHealth: '! systemctl status rop_worker'
+        health: ps -ef | grep -v grep | grep -i haproxy-softdeliveryplatform | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /usr/bin/systemctl start haproxy-softdeliveryplatform
+        stop: /usr/bin/sudo /usr/bin/systemctl stop haproxy-softdeliveryplatform
+        stopHealth: '! ps -ef | grep -v grep | grep -i haproxy-softdeliveryplatform | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
   serverFilters:
-    - m4s-d545-ifrows-01
+    - m4s-q35-cuws-01
   lifecycle:
-    - STOP
     - DOWNLOAD
-    - INSTALL
     - START
     - HEALTH_CHECK
-- name: rop-api-service
-  type: SERVICE
-  dependsOn:
-    - componentName: rop-worker-service
-      reverseDependency: false
+- name: svcmft
+  type: PACKAGE
+  dependsOn: []
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.rop_api_python
-      artifactId: ICEropapi-python
-      version: 0.0.30
-      rpmName: ICEropapi-python
-      serviceCommands:
-        health: systemctl status rop_api_python
-        start: sudo /usr/bin/systemctl start rop_api_python
-        stop: sudo /usr/bin/systemctl stop rop_api_python
-        stopHealth: '! systemctl status rop_api_python'
+      groupId: com.theice.svcmft
+      artifactId: ICEsvcmft
+      version: 2.32.8
+      rpmName: ICEsvcmft
+      containerType: RPM
   serverFilters:
-    - m4s-d545-ifroapi-01
+    - m4s-q35-cuaas-01
+    - m4s-q35-cubas-01
+    - m4s-q35-cucas-01
   lifecycle:
-    - STOP
     - DOWNLOAD
-    - INSTALL
-    - START
-    - HEALTH_CHECK
-- name: rop-statuscenter-service
-  type: SERVICE
+- name: becwallet
+  type: PACKAGE
   dependsOn:
-    - componentName: rop-worker-service
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
       reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.rop_status_center
-      artifactId: ICEropstatuscenter
-      version: 0.0.17
-      rpmName: ICEropstatuscenter
-      serviceCommands:
-        health: systemctl status rop_status_center
-        start: sudo /usr/bin/systemctl start rop_status_center
-        stop: sudo /usr/bin/systemctl stop rop_status_center
-        stopHealth: '! systemctl status rop_status_center'
+      groupId: com.theice.bec
+      artifactId: ICEbec-wallet-rpm
+      version: 2.0.0.117
+      rpmName: ICEbec-wallet-rpm
+      containerType: RPM
   serverFilters:
-    - m4s-d545-ifrosc-01
+    - m4s-q35-cuaas-01
+    - m4s-q35-cubas-01
+    - m4s-q35-cubdb-01
+    - m4s-q35-cucas-01
+    - m4s-q35-cuodb-01
   lifecycle:
-    - STOP
     - DOWNLOAD
-    - INSTALL
-    - START
-    - HEALTH_CHECK
-- name: rop-ui-service
+- name: apache-clearingconsole
   type: SERVICE
   dependsOn:
-    - componentName: rop-api-service
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
       reverseDependency: false
-    - componentName: rop-edge-service
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
       reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.rop_ui
-      artifactId: ICErop_ui
-      version: 0.0.35
-      rpmName: ICErop_ui
+      groupId: com.theice.apache.apache-clearingconsole.rpm
+      artifactId: ICEapache-clearingconsole
+      version: 3.0.3
+      rpmName: ICEapache-clearingconsole
       serviceCommands:
-        health: 'ps -ef | grep -i ''nginx: master'' | grep -v grep &> /dev/null'
-        start: sudo /var/opt/rop-ui/nginx.sh start
-        stop: sudo /var/opt/rop-ui/nginx.sh stop
-        stopHealth: '! ps -ef | grep -i ''nginx: master'' | grep -v grep &> /dev/null'
+        health: ps -ef | grep -i clearingconsole|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-clearingconsole start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-clearingconsole stop && sleep 10
+        stopHealth: '! ps -ef | grep http | grep clearingconsole|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
   serverFilters:
-    - m4s-d545-ifroui-01
+    - m4s-q35-cuws-01
   lifecycle:
     - STOP
     - DOWNLOAD
-    - INSTALL
     - START
     - HEALTH_CHECK
+- name: apache-ecs
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-ecs.rpm
+      artifactId: ICEapache-ecs
+      version: 3.0.2
+      rpmName: ICEapache-ecs
+      serviceCommands:
+        health: ps -ef | grep -i ecs|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-ecs start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-ecs stop && sleep 10
+        stopHealth: '! ps -ef | grep http | grep ecs|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: brs
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.brs
+      artifactId: ICEbanking-reconciliation-Linux
+      version: 9.3.6.0
+      rpmName: ICEbanking-reconciliation-Linux
+      serviceCommands:
+        health: ps -ef | grep brs|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: sudo /var/opt/brs/scripts/startStop.sh start && sleep 10
+        stop: sudo /var/opt/brs/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep brs|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cucas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: clearingconsole
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.clearingconsole
+      artifactId: ICEclearingconsole-Linux
+      version: 9.3.6.1
+      rpmName: ICEclearingconsole-Linux
+      serviceCommands:
+        health: ps -ef | grep CLEARINGCONSOLE|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /var/opt/clearingconsole/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo /var/opt/clearingconsole/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep CLEARINGCONSOLE|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cubas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: crd-linux
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.crd
+      artifactId: ICEcrd-Linux
+      version: 9.3.6.1
+      rpmName: ICEcrd-Linux
+      serviceCommands:
+        health: ps -ef | grep -i CRD|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /var/opt/crd/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo /var/opt/crd/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep CRD|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cubas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: ecs-linux
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.ecs
+      artifactId: ICEecs-Linux
+      version: 9.3.6.1
+      rpmName: ICEecs-Linux
+      serviceCommands:
+        health: ps -ef | grep MonitoringID=ecs|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: sudo /var/opt/ecs/scripts/startStop.sh start && sleep 10
+        stop: sudo /var/opt/ecs/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep MonitoringID=ecs|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuaas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: ecsgateway
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.ecs
+      artifactId: ICEecsgateway
+      version: 9.3.6.0
+      rpmName: ICEecsgateway
+      serviceCommands:
+        health: ps -ef | grep gateway.ecs.theice.com|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/s88jboss6-ecsgw start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/s88jboss6-ecsgw stop && sleep 10
+        stopHealth: '! ps -ef | grep [M]onitoringID=ECSGateway|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuaas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: investment
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.investment
+      artifactId: ICEinvestment-Linux
+      version: 9.3.6.1
+      rpmName: ICEinvestment-Linux
+      serviceCommands:
+        health: ps -ef | grep -i [M]onitoringID=investment|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: sudo /var/opt/investment/scripts/startStop.sh start && sleep 10
+        stop: sudo /var/opt/investment/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep -i [M]onitoringID=investment|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cucas-01
+  lifecycle:
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: isg
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.isg
+      artifactId: ICEisg-Linux
+      version: 9.3.6.1
+      rpmName: ICEisg-Linux
+      serviceCommands:
+        health: ps -ef | grep -i [M]onitoringID=isg|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: sudo /var/opt/isg/scripts/startStop.sh start && sleep 10
+        stop: sudo /var/opt/isg/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep -i [M]onitoringID=isg|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cucas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: matchoff
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.matchoff
+      artifactId: ICEmatchoff
+      version: 9.3.6.0
+      rpmName: ICEmatchoff
+      serviceCommands:
+        health: ps -ef | grep matchoff.theice.com|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/s88jboss6-matchoff start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/s88jboss6-matchoff stop && sleep 10
+        stopHealth: '! ps -ef | grep matchoff.theice.com|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cucas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: memberconsole
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.memberconsole
+      artifactId: ICEmemberconsole-Linux
+      version: 9.3.6.0
+      rpmName: ICEmemberconsole-Linux
+      serviceCommands:
+        health: ps -ef | grep memberconsole.theice.com|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /var/opt/memberconsole/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo /var/opt/memberconsole/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep memberconsole.theice.com|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuaas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: midas
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.midas
+      artifactId: ICEmidas-Linux
+      version: 9.3.1.0
+      rpmName: ICEmidas-Linux
+      serviceCommands:
+        health: ps -ef | grep -i midas|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /var/opt/midas/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo /var/opt/midas/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep -i midas|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cucas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: priceservice
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.priceservice
+      artifactId: ICEpriceservice
+      version: 9.3.6.1
+      rpmName: ICEpriceservice
+      serviceCommands:
+        health: ps -ef | grep priceservice.theice.com|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/s88jboss6-priceservice start && sleep 100
+        stop: /usr/bin/sudo /etc/rc2.d/s88jboss6-priceservice stop && sleep 10
+        stopHealth: '! ps -ef | grep priceservice.theice.com|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cubas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: reportservice
+  type: SERVICE
+  dependsOn:
+    - componentName: becwallet
+      serverFilter: ( ice.host.name=${ice.host.name} and becwallet-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: clearing-ops-sudo
+      serverFilter: ( ice.host.name=${ice.host.name} and clearing-ops-sudo-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oracle-usr
+      serverFilter: ( ice.host.name=${ice.host.name} and oracle-usr-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: oraclefatclient
+      serverFilter: ( ice.host.name=${ice.host.name} and oraclefatclient-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: svcmft
+      serverFilter: ( ice.host.name=${ice.host.name} and svcmft-server )
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.reportservice
+      artifactId: ICEreportservice-Linux
+      version: 9.3.6.1
+      rpmName: ICEreportservice-Linux
+      serviceCommands:
+        health: ps -ef | grep -i reportservice|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /var/opt/reportservice/scripts/startStop.sh start && sleep 10
+        stop: /usr/bin/sudo /var/opt/reportservice/scripts/startStop.sh stop && sleep 10
+        stopHealth: '! ps -ef | grep -i reportservice|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cucas-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+
