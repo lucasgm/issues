@@ -1,22 +1,773 @@
-- name: rop-edge-service
+- name: ice-java-1.8.0.181
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: iceamazoncorretto.11.0.15.9.1
+  type: ""
+  dependsOn: []
+  actionCommands: []
+  containers: []
+  serverFilters: []
+- name: iceamazoncorretto.21.0.1.12.1
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.java.amazon.corretto
+      artifactId: ICEAmazonCorretto.21.0.1.12.1
+      version: 1.0.1
+      rpmName: ICEAmazonCorretto.21.0.1.12.1
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - DOWNLOAD
+- name: iceclearingwallet-linux
+  type: PACKAGE
+  dependsOn:
+    - componentName: iceamazoncorretto.11.0.15.9.1
+      serverFilter: ice.host.name=${ice.host.name}
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+    - componentName: icejava.1.8.0.201
+      serverFilter: ice.host.name=${ice.host.name}
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      componentFilter: not ( component=${component} )
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.icedbaadmin.wallets.rpm
+      artifactId: ICEclearingwallet-Linux
+      version: 3.0.0.162
+      rpmName: ICEclearingwallet-Linux
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - DOWNLOAD
+- name: icejava.1.8.0.201
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.java.java-180201
+      artifactId: ICEjava.1.8.0.201
+      version: 1.0.7
+      rpmName: ICEjava.1.8.0.201
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - DOWNLOAD
+- name: redis
+  type: PACKAGE
+  dependsOn:
+    - componentName: sdp-redis-master
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: UNINSTALL
+      dependsOnAction: UNINSTALL
+      orchestrationOnly: true
+    - componentName: sdp-redis-sentinel
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: UNINSTALL
+      dependsOnAction: UNINSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.redis
+      artifactId: ICEredis6
+      version: 6.0.5
+      rpmName: ICEredis6
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - DOWNLOAD
+- name: redis-exporter
+  type: PACKAGE
+  dependsOn:
+    - componentName: ice-java-1.8.0.181
+      serverFilter: ice.host.name=${ice.host.name}
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.redis
+      artifactId: ICEredis-exporter
+      version: 1.0.0
+      rpmName: ICEredis-exporter
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - DOWNLOAD
+- name: sdp-apache-ops-console
   type: SERVICE
   dependsOn: []
   actionCommands: []
   containers:
     - type: RPM
-      groupId: com.theice.rop.edgeservice
-      artifactId: ICErop_edgeservice
-      version: ""
-      rpmName: ICErop_edgeservice
+      groupId: com.theice.apache.apache-deliveryopsconsole
+      artifactId: ICEapache-deliveryopsconsole
+      version: 3.0.5
+      rpmName: ICEapache-deliveryopsconsole
       serviceCommands:
-        health: systemctl status rop_edgeservice
-        start: sudo /usr/bin/systemctl start rop_edgeservice
-        stop: sudo /usr/bin/systemctl stop rop_edgeservice
-        stopHealth: '! systemctl status rop_edgeservice'
+        health: ps -ef | grep -i deliveryopsconsole | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-deliveryopsconsole start
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-deliveryopsconsole stop
+        stopHealth: '! ps -ef | grep -i deliveryopsconsole | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
       containerType: RPM
   serverFilters:
-    - m4s-d545-ifroes-01
+    - m4s-q68-cews-01
   lifecycle:
     - STOP
+    - DOWNLOAD
     - START
     - HEALTH_CHECK
+- name: sdp-certification
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-certification
+      version: 3.1.0
+      rpmName: ICEsdp-certification
+      serviceCommands:
+        health: ps -ef | grep -i svc_cert | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15070/certification/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_cert/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_cert/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_cert | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-commodity-data
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-certification
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-ddi
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-data
+      version: 3.1.0
+      rpmName: ICEsdp-data
+      serviceCommands:
+        health: ps -ef | grep -i svc_data | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15110/data/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_data/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_data/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_data | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-common
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: 
+        - m4s-q68-cedlc-01
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-common
+      version: 3.1.0
+      rpmName: ICEsdp-common
+      serviceCommands:
+        health: ps -ef | grep -i svc_common | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15100/common/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_common/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_common/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_common | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-config
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands:
+    - name: health-check-icus
+      command: curl -v --connect-timeout 10 --max-time 5 --retry 50 --retry-delay 5 --retry-connrefused http://localhost:15025/actuator/health | grep UP
+      action: HEALTH_CHECK
+      runStage: AFTER
+    - name: health-check-not-icus
+      command: curl -v --connect-timeout 10 --max-time 5 --retry 50 --retry-delay 5 --retry-connrefused http://localhost:15020/actuator/health | grep UP
+      action: HEALTH_CHECK
+      runStage: AFTER
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-config
+      version: 3.1.0
+      rpmName: ICEsdp-config
+      serviceCommands:
+        health: ps -ef | grep -i svc_sdp_config | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15020/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_sdp_config/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_sdp_config/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_sdp_config | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-ddi
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-file-integration
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-ddi
+      version: 3.1.0
+      rpmName: ICEsdp-ddi
+      serviceCommands:
+        health: ps -ef | grep -i svc_ddi | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15130/ddi/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_ddi/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_ddi/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_ddi | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-delivery
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-common
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-delivery
+      version: 3.1.0
+      rpmName: ICEsdp-delivery
+      serviceCommands:
+        health: ps -ef | grep -i svc_del | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15060/delivery/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_del/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_del/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_del | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-file-integration
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-common
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: svcmft
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-file-integration
+      version: 3.1.0
+      rpmName: ICEsdp-file-integration
+      serviceCommands:
+        health: ps -ef | grep -i svc_file_integration | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15120/file-integration/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_file_integration/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_file_integration/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_file_integration | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-haproxy-softdeliveryplatform
+  type: SERVICE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.haproxy-haproxy-softdeliveryplatform
+      artifactId: ICEhaproxy-softdeliveryplatform
+      version: 1.0.4
+      rpmName: ICEhaproxy-softdeliveryplatform
+      serviceCommands:
+        health: ps -ef | grep -v grep | grep -i haproxy-softdeliveryplatform | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /usr/bin/systemctl start haproxy-softdeliveryplatform
+        stop: /usr/bin/sudo /usr/bin/systemctl stop haproxy-softdeliveryplatform
+        stopHealth: '! ps -ef | grep -v grep | grep -i haproxy-softdeliveryplatform | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cews-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-landing-page
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICElanding-page
+      version: 3.1.0
+      rpmName: ICElanding-page
+      serviceCommands:
+        health: ps -ef | grep -i svc_lp | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused --insecure http://localhost:15150/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_lp/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_lp/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_lp | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-ops-console
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-ops-console
+      version: 3.1.0
+      rpmName: ICEsdp-ops-console
+      serviceCommands:
+        health: ps -ef | grep -i svc_ops | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15080/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_ops/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_ops/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_ops | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-portal
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-portal
+      version: 3.1.0
+      rpmName: ICEsdp-portal
+      serviceCommands:
+        health: |-
+            ps -ef | grep -i svc_portal | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  if hostname | grep -q cedlt; then
+              curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused --insecure http://localhost:15040/wheat/actuator/health | grep UP;
+            elif hostname | grep -q cedlc; then
+              curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused --insecure http://localhost:15040/cocoa/actuator/health | grep UP;
+            else
+              curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused --insecure http://localhost:15040/actuator/health | grep UP;
+            fi
+        start: /usr/bin/sudo /var/opt/svc_portal/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_portal/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_portal | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-procurement
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.21.0.1.12.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: iceclearingwallet-linux
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-config
+      serverFilter: ( sdp-shared-server or sdp-commodity-server )
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+    - componentName: sdp-delivery
+      serverFilter: sdp-commodity-server
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-procurement
+      version: 3.1.0
+      rpmName: ICEsdp-procurement
+      serviceCommands:
+        health: ps -ef | grep -i svc_proc | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15050/procurement/actuator/health | grep UP
+        start: /usr/bin/sudo /var/opt/svc_proc/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_proc/scripts/startStop.sh stop
+        stopHealth: '! ps -ef | grep -i svc_proc | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlc-01
+    - m4s-q68-cedlt-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-redis-master
+  type: SERVICE
+  dependsOn:
+    - componentName: redis
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-redis-sentinel-master
+      version: 3.0.0.0
+      rpmName: ICEsdp-redis-sentinel-master
+      serviceCommands:
+        health: /usr/bin/sudo /var/opt/svc_redis_master/scripts/startStop.sh health
+        start: /usr/bin/sudo /var/opt/svc_redis_master/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_redis_master/scripts/startStop.sh stop
+        stopHealth: '! /usr/bin/sudo /var/opt/svc_redis_master/scripts/startStop.sh health'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: sdp-redis-sentinel
+  type: SERVICE
+  dependsOn:
+    - componentName: redis
+      serverFilter: sdp-shared-server
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+    - componentName: sdp-redis-master
+      reverseDependency: false
+      currentAction: START
+      dependsOnAction: HEALTH_CHECK
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.ice.clearing.sdp
+      artifactId: ICEsdp-redis-sentinel
+      version: 3.0.0.0
+      rpmName: ICEsdp-redis-sentinel
+      serviceCommands:
+        health: /usr/bin/sudo /var/opt/svc_redis_sentinel/scripts/startStop.sh health
+        start: /usr/bin/sudo /var/opt/svc_redis_sentinel/scripts/startStop.sh start
+        stop: /usr/bin/sudo /var/opt/svc_redis_sentinel/scripts/startStop.sh stop
+        stopHealth: '! /usr/bin/sudo /var/opt/svc_redis_sentinel/scripts/startStop.sh health'
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+- name: svcmft
+  type: PACKAGE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.svcmft
+      artifactId: ICEsvcmft
+      version: 2.40.4
+      rpmName: ICEsvcmft
+      containerType: RPM
+  serverFilters:
+    - m4s-q68-cedlas-01
+    - m4s-q68-cedlas-02
+    - m4s-q68-cedlas-03
+  lifecycle:
+    - DOWNLOAD
