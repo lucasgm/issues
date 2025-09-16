@@ -1,128 +1,59 @@
-Identity added: /runner/artifacts/10487/ssh_key_data (svcdplyaap@intcx.net)
-SSH password: 
-[WARNING]: Invalid characters were found in group names but not replaced, use
--vvvv to see details
+#roles/deploy_service/tasks/stop_only_linux.yml
+- name: Build stop/stopHealth (Linux)
+  ansible.builtin.set_fact:
+    _stop: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='stop') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
+      }}
+    _stophealth: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='stopHealth') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
+      }}
 
-PLAY [Ingest exec plan and build host phase maps] ******************************
+- name: Normalize stop commands for become (strip leading sudo)
+  ansible.builtin.set_fact:
+    _stop_clean: >-
+      {{
+        _stop
+        | map('regex_replace', '^(\\s*)(?:/usr/bin/)?sudo\\s+', '\\1')
+        | list
+      }}
 
-TASK [Load options (for PROXY/ENABLEREPO/DISABLEREPO)] *************************
-ok: [localhost]
+- name: DEBUG stop commands (orig vs executed)
+  ansible.builtin.debug:
+    msg: |
+      original_stop_cmds: {{ _stop | to_nice_json }}
+      executed_stop_cmds: {{ _stop_clean | to_nice_json }}
+  when: options.DEBUG | default(false)
 
-TASK [Read execplan.yml] *******************************************************
-ok: [localhost]
+- block:
+    - name: (check) would stop (Linux)
+      ansible.builtin.debug: { var: _stop }
+    - name: (check) would verify stopped (Linux)
+      ansible.builtin.debug: { var: _stophealth }
+  when: ansible_check_mode | default(false)
 
-TASK [Derive component name lists and dependency groups] ***********************
-ok: [localhost]
+- block:
+    - name: Stop services (Linux) — using plan-defined commands
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _stop_clean }}"
+      register: _stop_out
+      become: true
+      failed_when: false
+      changed_when: true
 
-TASK [Detect presence of action-specific dependency fields] ********************
-ok: [localhost]
-
-TASK [Detect presence of INSTALL-specific dependency fields] *******************
-ok: [localhost]
-
-TASK [Build INSTALL gating dependency map (action-aware)] **********************
-skipping: [localhost]
-
-TASK [Initialize INSTALL level computation state] ******************************
-skipping: [localhost]
-
-TASK [Iteratively compute INSTALL dependency levels] ***************************
-skipping: [localhost] => (item=install-levels iteration 0) 
-skipping: [localhost] => (item=install-levels iteration 1) 
-skipping: [localhost]
-
-TASK [Assert INSTALL dependency graph is acyclic] ******************************
-skipping: [localhost]
-
-TASK [Persist INSTALL levels and restore comp_deps_map for START/HEALTH computation] ***
-skipping: [localhost]
-
-TASK [Build START gating dependency map (action-aware)] ************************
-skipping: [localhost]
-
-TASK [Build START gating dependency map (fallback: generic dependsOn names)] ***
-ok: [localhost]
-
-TASK [Initialize START/HEALTH level computation state] *************************
-ok: [localhost]
-
-TASK [Iteratively compute START/HEALTH dependency levels] **********************
-included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=start-levels iteration 0)
-included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=start-levels iteration 1)
-
-TASK [Compute ready components for this iteration] *****************************
-ok: [localhost]
-
-TASK [Advance level state if any ready] ****************************************
-ok: [localhost]
-
-TASK [Compute ready components for this iteration] *****************************
-ok: [localhost]
-
-TASK [Advance level state if any ready] ****************************************
-skipping: [localhost]
-
-TASK [Assert START/HEALTH dependency graph is acyclic] *************************
-ok: [localhost] => {
-    "changed": false,
-    "msg": "All assertions passed"
-}
-
-TASK [Compose yum repo flags] **************************************************
-ok: [localhost]
-
-TASK [Normalize Artifactory vars for cache] ************************************
-ok: [localhost]
-
-TASK [Build list of unique GAVC keys] ******************************************
-ok: [localhost]
-
-TASK [Initialize Artifactory URL cache] ****************************************
-ok: [localhost]
-
-TASK [Query Artifactory for GAVC keys] *****************************************
-ok: [localhost] => (item=com.theice.rop.edgeservice:ICErop_edgeservice:0.0.32:rpm)
-
-TASK [Build final_url_cache from responses] ************************************
-ok: [localhost]
-
-TASK [Build dynamic host list from serverFilters] ******************************
-ok: [localhost]
-
-TASK [Fail if no hosts] ********************************************************
-ok: [localhost] => {
-    "changed": false,
-    "msg": "All assertions passed"
-}
-
-TASK [Build per-host phase map (STOP/UNINSTALL/DOWNLOAD/INSTALL/START/HEALTH_CHECK)] ***
-ok: [localhost]
-
-TASK [Register dynamic hosts with per-host variables] **************************
-changed: [localhost] => (item=m4s-d545-ifroes-01)
-
-PLAY [STOP phase (parallel roots, then sequential)] ****************************
-
-TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-d545-ifroes-01]
-
-TASK [Stop (Linux) — parallel dependency-free components] **********************
-
-TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
-ok: [m4s-d545-ifroes-01]
-
-TASK [deploy_service : Normalize stop commands for become (strip leading sudo)] ***
-ok: [m4s-d545-ifroes-01]
-
-TASK [deploy_service : (check) would stop (Linux)] *****************************
-skipping: [m4s-d545-ifroes-01]
-
-TASK [deploy_service : (check) would verify stopped (Linux)] *******************
-skipping: [m4s-d545-ifroes-01]
-
-TASK [deploy_service : Stop services (Linux) — using plan-defined commands] ****
-fatal: [m4s-d545-ifroes-01]: FAILED! => {"msg": "Missing sudo password"}
-
-PLAY RECAP *********************************************************************
-localhost                  : ok=23   changed=1    unreachable=0    failed=0    skipped=7    rescued=0    ignored=0   
-m4s-d545-ifroes-01         : ok=3    changed=0    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   
+    - name: Verify stopped (Linux)
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _stophealth }}"
+      register: _stop_health_out
+      failed_when: false
+      changed_when: false
+  when: not (ansible_check_mode | default(false))
