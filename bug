@@ -1,79 +1,59 @@
-#roles/deploy_service/tasks/start_only_linux.yml
-- name: Build start & hooks (Linux)
+#roles/deploy_service/tasks/stop_only_linux.yml
+- name: Build stop/stopHealth (Linux)
   ansible.builtin.set_fact:
-    _start_cmds: >-
+    _stop: >-
       {{
         phase_services | map(attribute='containers') | sum(start=[])
         | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='start') | reject('equalto', None)
+        | map(attribute='stop') | reject('equalto', None)
         | map('trim') | reject('equalto','') | list
       }}
-    _start_before: >-
+    _systemd_stop_names: >-
       {{
-        phase_services | map(attribute='actionCommands') | sum(start=[])
-        | selectattr('action','equalto','START')
-        | selectattr('runStage','equalto','BEFORE')
-        | map(attribute='command') | map('trim') | reject('equalto','') | list
+        _stop
+        | select('search','(?i)\\bsystemctl\\s+stop\\s+')
+        | map('regex_replace', '.*(?i)systemctl\\s+stop\\s+(\\S+).*', '\\1')
+        | list | unique
       }}
-    _start_after: >-
+    _non_systemd_stop_cmds: >-
+      {{ _stop | reject('search','(?i)\\bsystemctl\\s+stop\\s+') | list }}
+    _stophealth: >-
       {{
-        phase_services | map(attribute='actionCommands') | sum(start=[])
-        | selectattr('action','equalto','START')
-        | selectattr('runStage','equalto','AFTER')
-        | map(attribute='command') | map('trim') | reject('equalto','') | list
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='stopHealth') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
       }}
 
 - block:
-    - name: (check) BEFORE start hooks
-      ansible.builtin.debug: { var: _start_before }
-      when: _start_before | length > 0
-    - name: (check) would start (Linux)
-      ansible.builtin.debug: { var: _start_cmds }
-    - name: (check) AFTER start hooks
-      ansible.builtin.debug: { var: _start_after }
-      when: _start_after | length > 0
-    - name: Push simulated start summary (Linux)
-      ansible.builtin.set_fact:
-        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': false} ] }}"
-      when: ansible_check_mode | default(false)
+    - name: (check) would stop (Linux)
+      ansible.builtin.debug: { var: _stop }
+    - name: (check) would verify stopped (Linux)
+      ansible.builtin.debug: { var: _stophealth }
+  when: ansible_check_mode | default(false)
 
 - block:
-    - name: BEFORE start hooks
+    - name: Stop services via systemd when possible (Linux)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      become: true
+      loop: "{{ _systemd_stop_names | default([]) }}"
+      when: (_systemd_stop_names | default([]) | length) > 0
+
+    - name: Stop services (Linux) — non-systemd commands
       ansible.builtin.shell: "{{ item }}"
       args: { executable: /bin/bash }
-      loop: "{{ _start_before }}"
+      loop: "{{ _non_systemd_stop_cmds }}"
+      register: _stop_out
       failed_when: false
       changed_when: true
-      when: _start_before | length > 0
 
-    - name: Start services (Linux)
+    - name: Verify stopped (Linux)
       ansible.builtin.shell: "{{ item }}"
       args: { executable: /bin/bash }
-      loop: "{{ _start_cmds }}"
-      register: _start_out
+      loop: "{{ _stophealth }}"
+      register: _stop_health_out
       failed_when: false
-      changed_when: true
-
-    - name: Collect failed start results (for debug; do not fail yet)
-      ansible.builtin.set_fact:
-        _failed_start_results: "{{ _start_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list }}"
-      when: (_start_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0
-
-    - name: Debug failed starts (rc/stdout/stderr)
-      ansible.builtin.debug:
-        msg: >-
-          start_failures: {{ _failed_start_results | default([]) | map(attribute='item') | list | to_nice_json }}
-      when: _failed_start_results is defined and _failed_start_results | length > 0
-
-    - name: AFTER start hooks
-      ansible.builtin.shell: "{{ item }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _start_after }}"
-      failed_when: false
-      changed_when: true
-      when: _start_after | length > 0
-
-    - name: Push start summary (Linux)
-      ansible.builtin.set_fact:
-        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': false } ] }}"
-      when: not (ansible_check_mode | default(false))
+      changed_when: false
+  when: not (ansible_check_mode | default(false))
