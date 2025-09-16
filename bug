@@ -1,52 +1,6 @@
-#roles/deploy_service/tasks/stop_only_linux.yml
-- name: Build stop/stopHealth (Linux)
-  ansible.builtin.set_fact:
-    _stop: >-
-      {{
-        phase_services | map(attribute='containers') | sum(start=[])
-        | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='stop') | reject('equalto', None)
-        | map('trim') | reject('equalto','') | list
-      }}
-    _stophealth: >-
-      {{
-        phase_services | map(attribute='containers') | sum(start=[])
-        | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='stopHealth') | reject('equalto', None)
-        | map('trim') | reject('equalto','') | list
-      }}
-
-- name: Normalize stop commands for become (strip leading sudo)
-  ansible.builtin.set_fact:
-    _stop_clean: >-
-      {{
-        _stop
-        | map('regex_replace', '^(\\s*)(?:/usr/bin/)?sudo\\s+', '\\1')
-        | list
-      }}
-
-- block:
-    - name: (check) would stop (Linux)
-      ansible.builtin.debug: { var: _stop }
-    - name: (check) would verify stopped (Linux)
-      ansible.builtin.debug: { var: _stophealth }
-  when: ansible_check_mode | default(false)
-
-- block:
-    - name: Stop services (Linux) — using plan-defined commands
-      ansible.builtin.shell: "{{ item }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _stop_clean }}"
-      register: _stop_out
-      become: true
-      failed_when: false
-      changed_when: true
-
-    - name: Verify stopped (Linux)
-      ansible.builtin.shell: "{{ item }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _stophealth }}"
-      register: _stop_health_out
-      failed_when: false
-      changed_when: false
-  when: not (ansible_check_mode | default(false))
+      serviceCommands:
+        health: systemctl status rop_edgeservice
+        start: sudo /usr/bin/systemctl start rop_edgeservice
+        stop: sudo /usr/bin/systemctl stop rop_edgeservice
+        stopHealth: '! systemctl status rop_edgeservice'
+      containerType: RPM
