@@ -1,140 +1,23 @@
-# ExecPlan‑Driven Deployment Playbook
-
-This repository contains an Ansible playbook that deploys services defined in a single YAML "execution plan" (execplan). It dynamically derives the host list, maps components to lifecycle phases, orchestrates dependency‑aware starts and health checks, and records a concise deployment summary.
-
-## What It Does
-- Reads `execplan.yml` and builds per‑host phase queues for `STOP`, `DOWNLOAD`, `INSTALL`, `START`, `HEALTH_CHECK`.
-- Derives dependency levels to gate `START` and `HEALTH_CHECK` execution.
-- Downloads artifacts from Artifactory (Linux/Windows) and caches resolved GAVC URLs on localhost.
-- Installs Linux RPMs in batch on each host (handles remove vs reinstall). Installs Windows packages via Chocolatey or ZIP.
-- Runs service start/stop/health shell/PowerShell commands from the plan.
-- Provides a post‑deploy step (SE Tools wrapper + cleanup of downloaded artifacts).
-- Supports Ansible check mode to preview actions without changing hosts.
-
-## Key Files
-- `playbook.yml`: Orchestration entrypoint (all plays/phases).
-- `execplan.yml`: Input plan that describes components, hosts, dependencies, containers, commands, and lifecycle.
-- `roles/deploy_service/*`: Implementation for download/install/start/stop/health and helpers.
-- `vars/vars.yml`: Global options (proxy, repo flags, toggles) consumed by the playbook.
-
-## ExecPlan Fields (used by the playbook)
-Minimum per component:
-- `name`: Unique component name (string).
-- `type`: Typically `SERVICE`.
-- `serverFilters`: List of hostnames for this component.
-- `lifecycle`: Subset of `STOP`, `DOWNLOAD`, `INSTALL`, `START`, `HEALTH_CHECK`.
-- `containers[]`: Items with at least `type`, `groupId`, `artifactId` (or `name`), and `version`.
-  - Linux RPMs: `type: RPM` and optional `serviceCommands` with `start`, `stop`, `stopHealth`, `health`.
-  - Windows: `type: CHOCO` or `type: ZIP` (ZIP also supports `installLocation` and optional `postUnZipCmd`).
-- Optional `actionCommands[]`: Extra commands with `action` in `INSTALL|START`, and `runStage` `BEFORE|AFTER`.
-- Optional `dependsOn`: Either simple names or objects with `componentName`, `currentAction`, `dependsOnAction`.
-
-Notes on ignored fields: `orchestrationOnly` and `reverseDependency` appear in some plans but are not used by the current playbook logic.
-
-## Lifecycle And Phase Mapping
-Source: `playbook.yml` (Play 1 → “Build per‑host phase map”).
-- For each component+host, queues the component into the phase lists present in `lifecycle`.
-- Special case: if `DOWNLOAD` is present (or `INSTALL` is explicitly present), the component is also placed into `INSTALL`. That is, `DOWNLOAD` implies an ensuing `INSTALL` phase even when `INSTALL` is not listed.
-- If a phase is not in `lifecycle` (e.g., `STOP`), it is not queued for that component/host.
-
-## Dependency Handling (START/HEALTH only)
-- The playbook computes a dependency map and levels per component name.
-- Action‑aware mode: when `dependsOn` entries include `currentAction` and `dependsOnAction`, only edges where `currentAction == 'START'` and `dependsOnAction in ['HEALTH_CHECK','START']` are considered.
-- Fallback mode: if no action‑specific fields exist, it treats `dependsOn` as a flat list of component names.
-- Levels are computed topologically; `START` and `HEALTH_CHECK` run level‑by‑level for non‑root components, while roots (no deps) may be started/checked earlier in parallel.
-- INSTALL does not use dependency levels; see “Execution Flow” for details.
-
-## Execution Flow (high‑level)
-1) Ingest plan and prepare context (localhost)
-- Reads `execplan.yml` into `components` and derives component name lists, no‑dependency roots, and the dependency map/levels.
-- Composes repo flags from `vars/vars.yml` (`ENABLEREPO`, `DISABLEREPO`).
-- Builds a localhost cache of Artifactory GAVC URLs for all known GAVC coordinates found in containers.
-- Adds dynamic hosts from `serverFilters` with host‑scoped vars (phase map, levels, timeouts, repo flags, options, artifactory creds).
-
-2) STOP (optional)
-- Runs for components that include `STOP` in their lifecycle.
-- Executes Linux shell or Windows PowerShell commands from `containers[].serviceCommands.stop` and `stopHealth`.
-
-3) DOWNLOAD
-- For each component queued in `DOWNLOAD`, downloads each container artifact (Linux async with `get_url`; Windows with `win_get_url`).
-- Waits for all async download jobs for the component, then records Linux RPM file paths to `downloaded_rpms` for later batch install.
-
-4) INSTALL
-- Parallel “root” installs (components with no deps) per host:
-  - Linux: `roles/deploy_service/tasks/host_install_batch.yml` removes current packages (NEVRs if possible) and runs `yum install` (or `yum reinstall` fallback) with proxy and repo flags.
-  - Windows: `roles/deploy_service/tasks/host_install_batch_windows.yml` installs `CHOCO` packages and unzips `ZIP` artifacts.
-- Gate: a localhost check fails fast if any root INSTALL/START/HEALTH failures occurred, before proceeding.
-- Sequential “remainder” installs per host (component order), regardless of dependency levels.
-
-5) START + HEALTH_CHECK (gated by levels)
-- Starts then health‑checks services level‑by‑level (non‑roots), using commands from `containers[].serviceCommands.start` and `health`.
-
-6) POST_DEPLOY
-- Runs SE Tools wrapper on Linux (if sudo allows) and cleans up per‑host downloaded artifacts.
-
-7) Aggregate results
-- Collates and prints install/start/health summaries and fails the run if any failures were recorded.
-
-## Artifactory And Credentials
-- GAVC search and caching (localhost): Uses `artifactory_token` if provided, else `$ARTIFACTORY_TOKEN`, else `artifactory_password`. Base URL defaults to `https://artifactory.intcx.net/artifactory` and can be overridden with `artifactory_url`.
-- Downloads: The per‑container download task first tries the localhost cache; if missing, it queries Artifactory. A Bearer token is used. On some paths, a role passes `artifactory_password` directly — set either `artifactory_token`/`ARTIFACTORY_TOKEN` or `artifactory_password` to authenticate.
-
-## Options (from `vars/vars.yml`)
-- Proxy and repos: `options.PROXY`, `options.ENABLEREPO`, `options.DISABLEREPO` (injected into yum commands).
-- Misc toggles used in roles: `options.DEBUG`, `options.YUMCHECK`, etc. See `vars/vars.yml` for the full list and defaults.
-
-## OS‑Specific Behavior
-- Linux
-  - RPM download to `/tmp` and batch `yum` install.
-  - Service commands executed with `/bin/bash`.
-  - Post‑deploy SE Tools and artifact cleanup supported.
-- Windows
-  - Download to `C:\\Temp`.
-  - `CHOCO` packages installed via Chocolatey; `ZIP` unpacked to `installLocation` and `postUnZipCmd` optionally executed.
-  - Service commands executed via PowerShell.
-  - Artifact cleanup is currently disabled in the role (commented out).
-
-## Check Mode Support
-Most phases emit planned commands and simulated summaries when run with `--check`:
-- Download: prints what would be fetched and where.
-- Install: prints before/after hooks and the exact yum commands.
-- Start/Health/Stop: prints the commands it would execute.
-
-## How To Run
-- Prepare connectivity to all hostnames listed in `serverFilters` in `execplan.yml` (SSH/WinRM, vars, and credentials as needed).
-- Provide Artifactory credentials via vars or environment.
-- Run:
-  - `ansible-playbook playbook.yml`
-  - Add `-e @vars/vars.yml` or per‑var `-e KEY=VALUE` to override options.
-  - Use `--check` to preview actions.
-
-## Outputs And Failure Criteria
-- Per‑host stats: `install_summary` and `start_health_summary` are collected and then aggregated on localhost.
-- The final play fails if any install/start/health failures were recorded across hosts.
-
-## Limitations / Current Behavior
-- `orchestrationOnly` and `reverseDependency` in `execplan.yml` are not evaluated anywhere in the playbook.
-- Dependency levels gate only `START` and `HEALTH_CHECK`. `INSTALL` runs for roots first, then the remainder in component order (not level‑gated).
-- Windows artifact cleanup is not implemented (commented in the role).
-- `DOWNLOAD` implies `INSTALL` even if `INSTALL` is not listed in the lifecycle.
-
-## Example Component (minimal)
-```yaml
-- name: my-service
+- name: rop-edge-service
   type: SERVICE
-  serverFilters: [ host1, host2 ]
-  lifecycle: [ DOWNLOAD, START, HEALTH_CHECK ]
+  dependsOn: []
+  actionCommands: []
   containers:
     - type: RPM
-      groupId: com.example
-      artifactId: my-service
-      version: 1.2.3
+      groupId: com.theice.rop.edgeservice
+      artifactId: ICErop_edgeservice
+      version: 0.0.34
+      rpmName: ICErop_edgeservice
       serviceCommands:
-        start: /usr/bin/sudo systemctl start my-service
-        stop:  /usr/bin/sudo systemctl stop my-service
-        health: systemctl is-active --quiet my-service
-```
-
----
-If you want the playbook to honor `orchestrationOnly` or to level‑gate `INSTALL` as well, open an issue or ask for an enhancement and we can wire that in.
-
+        health: systemctl status rop_edgeservice
+        start: sudo /usr/bin/systemctl start rop_edgeservice
+        stop: sudo /usr/bin/systemctl stop rop_edgeservice
+        stopHealth: '! systemctl status rop_edgeservice'
+      containerType: RPM
+  serverFilters:
+    - m4s-d545-ifroes-01
+  lifecycle:
+    - STOP
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
