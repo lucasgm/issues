@@ -13,23 +13,13 @@
   ansible.builtin.debug:
     var: _health_cmds_raw
 
-- name: Fix corrupted /dev/null references
+- name: Prepare encoded health commands (execute as-is via wrapper)
   ansible.builtin.set_fact:
-    _health_cmds: >-
-      {{
-        _health_cmds_raw
-        | map('regex_replace', '/devull', '/dev/null')
-        | map('regex_replace', 'devull', 'dev/null')
-        | list
-      }}
-
-- name: Debug health commands after fix
-  ansible.builtin.debug:
-    var: _health_cmds
+    _health_cmds_b64: "{{ _health_cmds_raw | map('b64encode') | list }}"
 
 - block:
     - name: (check) would health-check (Linux)
-      ansible.builtin.debug: { var: _health_cmds }
+      ansible.builtin.debug: { var: _health_cmds_raw }
 
     - name: Push simulated health summary (Linux)
       ansible.builtin.set_fact:
@@ -37,40 +27,50 @@
       when: ansible_check_mode | default(false)
 
 - block:
-    - name: Debug rendered health commands
+    - name: Debug rendered health commands (wrapper)
       ansible.builtin.debug:
-        msg: "Executing health check: {{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
-      loop: "{{ _health_cmds }}"
+        msg: "Executing health check (wrapper): {{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
+      loop: "{{ _health_cmds_raw }}"
       vars:
         health_timeout: "{{ timeout | default(30) }}"
         health_retry: "{{ retry | default(5) }}"
         health_retry_delay: "{{ retryDelay | default(2) }}"
 
-    - name: Health check (Linux)
-      ansible.builtin.shell: "{{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _health_cmds }}"
+    - name: Health check (Linux via wrapper)
+      ansible.builtin.script:
+        cmd: roles/deploy_service/files/health_check.sh {{ item }}
+        executable: /bin/bash
+      loop: "{{ _health_cmds_b64 }}"
       register: _health_out
       failed_when: false
       changed_when: false
-      vars:
-        health_timeout: "{{ timeout | default(30) }}"
-        health_retry: "{{ retry | default(5) }}"
-        health_retry_delay: "{{ retryDelay | default(2) }}"
+      environment:
+        HC_TIMEOUT: "{{ timeout | default(30) }}"
+        HC_DEBUG: "{{ (options.DEBUG | default(false)) | bool | ternary('1','0') }}"
+
+    - name: Parse wrapper JSON from health results
+      ansible.builtin.set_fact:
+        _parsed_health: "{{ _health_out.results | default([]) | parse_health_results }}"
 
     - name: Collect failed health results
       ansible.builtin.set_fact:
-        _failed_health_results: "{{ _health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list }}"
-      when: (_health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0
+        _failed_health_results: "{{ _parsed_health | selectattr('rc','defined') | selectattr('rc','ne',0) | list }}"
+      when: (_parsed_health | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0
 
     - name: Build failed health details
       ansible.builtin.set_fact:
-        _failed_health_details: "{{ (_failed_health_details | default([])) + [ {'item': item.item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string), 'original_command': item.item, 'rc': item.rc, 'stdout': (item.stdout | default('')) | trim, 'stderr': (item.stderr | default('')) | trim } ] }}"
+        _failed_health_details: >-
+          {{
+            (_failed_health_details | default([]))
+            + [ {
+                  'item': (item.json.repaired | default(item.json.original | default(''))),
+                  'original_command': (item.json.original | default('')),
+                  'rc': item.rc,
+                  'stdout': (item.stdout | default('')) | trim,
+                  'stderr': (item.stderr | default('')) | trim
+                } ]
+          }}
       loop: "{{ _failed_health_results }}"
-      vars:
-        health_timeout: "{{ timeout | default(30) }}"
-        health_retry: "{{ retry | default(5) }}"
-        health_retry_delay: "{{ retryDelay | default(2) }}"
       when: _failed_health_results is defined
 
     - name: Debug failed health checks (rc/stdout/stderr)
