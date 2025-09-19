@@ -1,110 +1,23 @@
-#roles/deploy_service/tasks/health_only_linux.yml
-- name: Build health list (Linux) 
-  ansible.builtin.set_fact:
-    _health_cmds_raw: >-
-      {{
-        phase_services | map(attribute='containers') | sum(start=[])
-        | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='health') | reject('equalto', None)
-        | map('trim') | reject('equalto','') | list
-      }}
-
-- name: Debug raw health commands before fix
-  ansible.builtin.debug:
-    var: _health_cmds_raw
-
-- name: Fix corrupted /dev/null references
-  ansible.builtin.set_fact:
-    _health_cmds: "{{ _health_cmds_raw | map('regex_replace', 'devull', 'dev/null') | list }}"
-
-- name: Debug health commands after fix
-  ansible.builtin.debug:
-    var: _health_cmds
-
-- block:
-    - name: (check) would health-check (Linux)
-      ansible.builtin.debug: { var: _health_cmds }
-
-    - name: Push simulated health summary (Linux)
-      ansible.builtin.set_fact:
-        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': false} ] }}"
-      when: ansible_check_mode | default(false)
-
-- block:
-    - name: Debug rendered health commands
-      ansible.builtin.debug:
-        msg: "Executing health check: {{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
-      loop: "{{ _health_cmds }}"
-      vars:
-        health_timeout: "{{ timeout | default(30) }}"
-        health_retry: "{{ retry | default(5) }}"
-        health_retry_delay: "{{ retryDelay | default(2) }}"
-
-    - name: Health check (Linux)
-      ansible.builtin.shell: "{{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _health_cmds }}"
-      register: _health_out
-      failed_when: false
-      changed_when: false
-      vars:
-        health_timeout: "{{ timeout | default(30) }}"
-        health_retry: "{{ retry | default(5) }}"
-        health_retry_delay: "{{ retryDelay | default(2) }}"
-
-    - name: Collect failed health results
-      ansible.builtin.set_fact:
-        _failed_health_results: "{{ _health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list }}"
-      when: (_health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0
-
-    - name: Build failed health details
-      ansible.builtin.set_fact:
-        _failed_health_details: "{{ (_failed_health_details | default([])) + [ {'item': item.item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string), 'original_command': item.item, 'rc': item.rc, 'stdout': (item.stdout | default('')) | trim, 'stderr': (item.stderr | default('')) | trim } ] }}"
-      loop: "{{ _failed_health_results }}"
-      vars:
-        health_timeout: "{{ timeout | default(30) }}"
-        health_retry: "{{ retry | default(5) }}"
-        health_retry_delay: "{{ retryDelay | default(2) }}"
-      when: _failed_health_results is defined
-
-    - name: Debug failed health checks (rc/stdout/stderr)
-      ansible.builtin.debug:
-        var: _failed_health_details
-      when: _failed_health_details is defined and _failed_health_details | length > 0
-
-    - name: Push health summary (Linux) - record failure before terminating
-      ansible.builtin.set_fact:
-        start_health_summary: >-
-          {{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': (_health_out is defined and (_health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0) | bool } ] }}
-      when: not (ansible_check_mode | default(false))
-
-    - name: Fail if any health checks failed
-      ansible.builtin.fail:
-        msg: |
-          HEALTH CHECK FAILURES on {{ inventory_hostname }}:
-          ===================================================
-          
-          {{ _failed_health_details | length }} health check(s) failed:
-          
-          {% for failure in _failed_health_details %}
-          FAILED COMMAND {{ loop.index }}:
-          Template: {{ failure.original_command }}
-          Rendered: {{ failure.item }}
-          Exit Code: {{ failure.rc }}
-          {% if failure.stdout | length > 0 %}
-          Standard Output:
-          {{ failure.stdout | indent(2) }}
-          {% else %}
-          Standard Output: (empty)
-          {% endif %}
-          {% if failure.stderr | length > 0 %}
-          Standard Error:
-          {{ failure.stderr | indent(2) }}
-          {% else %}
-          Standard Error: (empty)
-          {% endif %}
-          
-          {% endfor %}
-          CAUSE: Health checks indicate services are not running or responding properly.
-          This will terminate the playbook per fail-fast orchestration requirements.
-      when: _failed_health_details is defined and _failed_health_details | length > 0
+- name: fec-apache-pmma
+  type: SERVICE
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: RPM
+      groupId: com.theice.apache.apache-pmma
+      artifactId: ICEapache-pmma
+      version: 3.0.1
+      rpmName: ICEapache-pmma
+      serviceCommands:
+        health: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
+        start: /usr/bin/sudo /etc/rc2.d/S89apache-pmma start && sleep 10
+        stop: /usr/bin/sudo /etc/rc2.d/S89apache-pmma stop && sleep 10
+        stopHealth: '! ps -ef |grep -i apache| grep -i pmma|grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+      containerType: RPM
+  serverFilters:
+    - m4s-q35-cuws-01
+  lifecycle:
+    - DOWNLOAD
+    - INSTALL
+    - START
+    - HEALTH_CHECK   
