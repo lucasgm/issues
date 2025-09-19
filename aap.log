@@ -1,59 +1,517 @@
-#roles/deploy_service/tasks/stop_only_linux.yml
-- name: Build stop/stopHealth (Linux)
-  ansible.builtin.set_fact:
-    _stop: >-
-      {{
-        phase_services | map(attribute='containers') | sum(start=[])
-        | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='stop') | reject('equalto', None)
-        | map('trim') | reject('equalto','') | list
-      }}
-    _stophealth: >-
-      {{
-        phase_services | map(attribute='containers') | sum(start=[])
-        | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='stopHealth') | reject('equalto', None)
-        | map('trim') | reject('equalto','') | list
-      }}
+Identity added: /runner/artifacts/10975/ssh_key_data (svcdplyaap@intcx.net)
+SSH password: 
+[WARNING]: Invalid characters were found in group names but not replaced, use
+-vvvv to see details
 
-- name: Normalize stop commands for become (strip leading sudo)
-  ansible.builtin.set_fact:
-    _stop_clean: >-
-      {{
-        _stop
-        | map('regex_replace', '^(\\s*)(?:/usr/bin/)?sudo\\s+', '\\1')
-        | list
-      }}
+PLAY [Ingest exec plan and build host phase maps] ******************************
 
-- name: DEBUG stop commands (orig vs executed)
-  ansible.builtin.debug:
-    msg: |
-      original_stop_cmds: {{ _stop | to_nice_json }}
-      executed_stop_cmds: {{ _stop_clean | to_nice_json }}
-  when: options.DEBUG | default(false)
+TASK [Load options (for PROXY/ENABLEREPO/DISABLEREPO)] *************************
+ok: [localhost]
 
-- block:
-    - name: (check) would stop (Linux)
-      ansible.builtin.debug: { var: _stop }
-    - name: (check) would verify stopped (Linux)
-      ansible.builtin.debug: { var: _stophealth }
-  when: ansible_check_mode | default(false)
+TASK [Read execplan.yml] *******************************************************
+ok: [localhost]
 
-- block:
-    - name: Stop services (Linux) — using plan-defined commands
-      ansible.builtin.shell: "{{ item }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _stop_clean }}"
-      register: _stop_out
-      become: true
-      failed_when: false
-      changed_when: true
+TASK [Derive component name lists and dependency groups] ***********************
+ok: [localhost]
 
-    - name: Verify stopped (Linux)
-      ansible.builtin.shell: "{{ item }}"
-      args: { executable: /bin/bash }
-      loop: "{{ _stophealth }}"
-      register: _stop_health_out
-      failed_when: false
-      changed_when: false
-  when: not (ansible_check_mode | default(false))
+TASK [Detect presence of action-specific dependency fields] ********************
+ok: [localhost]
+
+TASK [Detect presence of INSTALL-specific dependency fields] *******************
+ok: [localhost]
+
+TASK [Build INSTALL gating dependency map (action-aware)] **********************
+skipping: [localhost]
+
+TASK [Initialize INSTALL level computation state] ******************************
+skipping: [localhost]
+
+TASK [Iteratively compute INSTALL dependency levels] ***************************
+skipping: [localhost] => (item=install-levels iteration 0) 
+skipping: [localhost] => (item=install-levels iteration 1) 
+skipping: [localhost]
+
+TASK [Assert INSTALL dependency graph is acyclic] ******************************
+skipping: [localhost]
+
+TASK [Persist INSTALL levels and restore comp_deps_map for START/HEALTH computation] ***
+skipping: [localhost]
+
+TASK [Build START gating dependency map (action-aware)] ************************
+skipping: [localhost]
+
+TASK [Build START gating dependency map (fallback: generic dependsOn names)] ***
+ok: [localhost]
+
+TASK [Initialize START/HEALTH level computation state] *************************
+ok: [localhost]
+
+TASK [Iteratively compute START/HEALTH dependency levels] **********************
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=start-levels iteration 0)
+included: /runner/project/roles/deploy_service/tasks/compute_levels_step.yml for localhost => (item=start-levels iteration 1)
+
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
+
+TASK [Advance level state if any ready] ****************************************
+ok: [localhost]
+
+TASK [Compute ready components for this iteration] *****************************
+ok: [localhost]
+
+TASK [Advance level state if any ready] ****************************************
+skipping: [localhost]
+
+TASK [Assert START/HEALTH dependency graph is acyclic] *************************
+ok: [localhost] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [Compose yum repo flags] **************************************************
+ok: [localhost]
+
+TASK [Normalize Artifactory vars for cache] ************************************
+ok: [localhost]
+
+TASK [Build list of unique GAVC keys] ******************************************
+ok: [localhost]
+
+TASK [Initialize Artifactory URL cache] ****************************************
+ok: [localhost]
+
+TASK [Query Artifactory for GAVC keys] *****************************************
+ok: [localhost] => (item=com.theice.apache.apache-pmma:ICEapache-pmma:3.0.1:rpm)
+
+TASK [Build final_url_cache from responses] ************************************
+ok: [localhost]
+
+TASK [Build dynamic host list from serverFilters] ******************************
+ok: [localhost]
+
+TASK [Fail if no hosts] ********************************************************
+ok: [localhost] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [Build per-host phase map (STOP/UNINSTALL/DOWNLOAD/INSTALL/START/HEALTH_CHECK)] ***
+ok: [localhost]
+
+TASK [Register dynamic hosts with per-host variables] **************************
+changed: [localhost] => (item=m4s-q35-cuws-01)
+
+PLAY [STOP phase (parallel roots, then sequential)] ****************************
+[WARNING]: Using any_errors_fatal with the free strategy is not supported, as
+tasks are executed independently on each host
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Stop (Linux) — parallel dependency-free components] **********************
+skipping: [m4s-q35-cuws-01]
+
+TASK [Stop (Windows) — parallel dependency-free components] ********************
+skipping: [m4s-q35-cuws-01]
+
+TASK [Stop — sequential remainder (component-ordered)] *************************
+skipping: [m4s-q35-cuws-01]
+
+PLAY [UNINSTALL phase (parallel roots, then sequential)] ***********************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Uninstall — parallel dependency-free components (Linux)] *****************
+skipping: [m4s-q35-cuws-01]
+
+TASK [Uninstall — parallel dependency-free components (Windows)] ***************
+skipping: [m4s-q35-cuws-01]
+
+TASK [Uninstall — sequential remainder (component-ordered)] ********************
+skipping: [m4s-q35-cuws-01]
+
+PLAY [DOWNLOAD phase (parallel roots, then sequential)] ************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Download artifacts — parallel dependency-free components] ****************
+
+TASK [deploy_service : ansible.builtin.setup] **********************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Initialize download summary for this service] ***********
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Reset async job list for this service] ******************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build download list] ************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Download each container (check-safe include)] ***********
+[WARNING]: While constructing a mapping from
+/runner/project/roles/deploy_service/tasks/download_artifact.yml, line 134,
+column 7, found a duplicate dict key (when). Using last defined value only.
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-q35-cuws-01 => (item=ICEapache-pmma:3.0.1)
+
+TASK [deploy_service : Gather minimal facts (for os_family)] *******************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Normalise Artifactory vars] *****************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Derive artifact id and extension] ***********************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build cache key for this artefact] **********************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Determine OS family (lowercased)] ***********************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Compute destination directory] **************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Compute filename] ***************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Compute full destination path] **************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Assert dest_path is a valid string] *********************
+ok: [m4s-q35-cuws-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : ansible.builtin.debug] **********************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : ansible.builtin.set_fact] *******************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Search Artifactory (GAVC)] ******************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Get first downloadable URL] *****************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Diagnose empty search results] **************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Diagnose search request failure] ************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Fail early if nothing found] ****************************
+ok: [m4s-q35-cuws-01] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [deploy_service : Download artefact (Linux)] ******************************
+changed: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Track async download job] *******************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Mark download result] ***********************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Record successful download] *****************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Wait for all async downloads to finish] *****************
+ok: [m4s-q35-cuws-01] => (item=None)
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build jobId -> dest map] ********************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Collate completed RPM downloads] ************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Record completed RPM paths] *****************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Download artifacts — sequential remainder (component-ordered)] ***********
+skipping: [m4s-q35-cuws-01]
+
+PLAY [Validate DOWNLOAD phase results] *****************************************
+
+TASK [Collect download failure stats from all hosts] ***************************
+ok: [localhost]
+
+TASK [Display download failure summary] ****************************************
+ok: [localhost] => {
+    "msg": {
+        "summary": "0 download failures detected across infrastructure",
+        "total_download_failures": "0"
+    }
+}
+
+TASK [Display detailed failure diagnostics for each failed artifact] ***********
+skipping: [localhost]
+
+TASK [Fail playbook if any downloads failed] ***********************************
+skipping: [localhost]
+
+PLAY [INSTALL roots (level 0, parallel)] ***************************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Install root components (Linux)] *****************************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [Install root components (Windows)] ***************************************
+skipping: [m4s-q35-cuws-01]
+
+PLAY [INSTALL phase (legacy root+sequential)] **********************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Host-wide install (Linux) — legacy roots] ********************************
+
+TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Normalize proxy value] **********************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build proxy flag and repo flags] ************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Derive package NAMES from RPM files] ********************
+ok: [m4s-q35-cuws-01] => (item=/tmp/ICEapache-pmma-3.0.1.rpm)
+
+TASK [deploy_service : Derive package NEVRs from RPM files] ********************
+ok: [m4s-q35-cuws-01] => (item=/tmp/ICEapache-pmma-3.0.1.rpm)
+
+TASK [deploy_service : Collect unique package names and file NEVRs] ************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Check which package names are already installed] ********
+ok: [m4s-q35-cuws-01] => (item=ICEapache-pmma)
+
+TASK [deploy_service : Build list of installed package names] ******************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Get installed NEVRs for those names] ********************
+ok: [m4s-q35-cuws-01] => (item=ICEapache-pmma)
+
+TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build rpm join lists] ***********************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Skip if no RPMs to install on this host] ****************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
+changed: [m4s-q35-cuws-01]
+
+TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
+ok: [m4s-q35-cuws-01] => {
+    "msg": "rc: 0\\nstdout:\\nContinue with preremove checks\\n  Does not appear to be a container type.\\n  User ID: apache, matches Apache configuration package type.\\n  Found NO open file in /var/opt/apache24a/server/theice.com/pmma\\n  Removing sudo include file for: apache\\n  Remove Start Script S89apache-pmma\\n  Removing application directory: /var/opt/apache24a/server/theice.com/pmma\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICEapache-pmma-3.0.1-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + ARTIFACTID=ICEapache-pmma\\n  + CRONFILE=\\n  + GID=1500\\n  + GROUP=apache\\n  + HOMEDIR=\\n  + POSTINSTALLHOOK=\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=\\n  + RCNAME=S89apache-pmma\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=apache\\n  + USID=1500\\n  + SYSTEMD=pmma\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/apache24a/server/theice.com/pmma/logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=\\n  + '[' offX '!=' X ']'\\n  + echo 'Continue with preremove checks'\\n  + check_service_files\\n  /var/tmp/rpm-tmp.PeHnSH: line 91: check_service_files: command not found\\n  + isContainerType apache /var/opt/apache24a/server/theice.com/pmma\\n  ++ echo apache\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varUSER=apache\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = jbossX ')' -o '(' apacheX = nodejsX ')' ']'\\n  ++ dirname /var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = apacheX ')' -a '(' /var/opt/apache24a/server/theice.com = /var/opt ')' ']'\\n  ++ dirname /var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = nginxX ')' -a '(' /var/opt/apache24a/server/theice.com = /var/opt ')' ']'\\n  + echo 'Does not appear to be a container type.'\\n  + return 1\\n  + IsWebServerConf apache /var/opt/apache24a/server/theice.com/pmma\\n  ++ echo apache\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varUSER=apache\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  ++ dirname /var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = apacheX ')' -a '(' /var/opt/apache24a/server/theice.com '!=' /var/opt ')' ']'\\n  + echo 'User ID: apache, matches Apache configuration package type.'\\n  + return 0\\n  + isPidLive /var/opt/apache24a/server/theice.com/pmma/logs\\n  + varAPPLOGDIR=/var/opt/apache24a/server/theice.com/pmma/logs\\n  + '[' -d /var/opt/apache24a/server/theice.com/pmma/logs ']'\\n  ++ find /var/opt/apache24a/server/theice.com/pmma/logs -name '*pid*'\\n  + return 1\\n  + hasOpenFile /var/opt/apache24a/server/theice.com/pmma\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + '[' -d /var/opt/apache24a/server/theice.com/pmma/logs ']'\\n  + case $OSTYPE in\\n  + checkOpenFile /var/opt/apache24a/server/theice.com/pmma\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + lsof +D /var/opt/apache24a/server/theice.com/pmma\\n  + grep /var/opt/apache24a/server/theice.com/pmma\\n  + echo 'Found NO open file in /var/opt/apache24a/server/theice.com/pmma'\\n  + return 1\\n  + '[' -n /var/opt/apache24a/server/theice.com/pmma/ ']'\\n  + runHook\\n  + '[' -f /var/opt/apache24a/server/theice.com/pmma/ ']'\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/etc/rc2.d/S89apache-pmma: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/rv.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/pdk.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/ord-pr.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/mime.types: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/m4s.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/m4i.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/httpd-2.4.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/c6s.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/c6i.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/at-pr.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/all.conf: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + ARTIFACTID=ICEapache-pmma\\n  + CRONFILE=\\n  + GID=1500\\n  + GROUP=apache\\n  + HOMEDIR=\\n  + POSTINSTALLHOOK=\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=S89apache-pmma\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=apache\\n  + USID=1500\\n  + SYSTEMD=pmma\\n  + STARTSCRIPT=/etc/rc2.d/S89apache-pmma\\n  + STARTONBOOT=1\\n  + PACKAGENAME=ICEapache-pmma\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICEapache-pmma ']'\\n  + echo 'Removing sudo include file for: apache'\\n  + rm /etc/sudoers.d/ICEapache-pmma\\n  + '[' -f /etc/rc2.d/S89apache-pmma ']'\\n  + echo 'Remove Start Script S89apache-pmma'\\n  + rm /etc/rc2.d/S89apache-pmma\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/apache24a/server/theice.com/pmma'\\n  + '[' -n /var/opt/apache24a/server/theice.com/pmma ']'\\n  + '[' /var/opt/apache24a/server/theice.com/pmma '!=' / ']'\\n  + '[' /var/opt/apache24a/server/theice.com/pmma '!=' /var/opt ']'\\n  + rm -rf /var/opt/apache24a/server/theice.com/pmma\\n"
+}
+
+TASK [deploy_service : Verify removals (non-fatal check)] **********************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : DEBUG after-remove verification] ************************
+ok: [m4s-q35-cuws-01] => {
+    "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
+}
+
+TASK [deploy_service : Decide install mode (install vs reinstall)] *************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
+changed: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
+ok: [m4s-q35-cuws-01] => {
+    "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
+}
+
+TASK [deploy_service : Fail install if yum returned non-zero] ******************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : DEBUG after-install: installed state for target names] ***
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : AFTER INSTALL hooks] ************************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Record install summary (Linux)] *************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Host-wide install (Windows) — legacy roots] ******************************
+skipping: [m4s-q35-cuws-01]
+
+PLAY [ROOT START + HEALTH (parallel for no-deps)] ******************************
+
+TASK [ansible.builtin.setup] ***************************************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Start root services (Linux)] *********************************************
+
+TASK [deploy_service : Build start & hooks (Linux)] ****************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Derive systemdon-systemd start command groups] ********
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : (check) BEFORE start hooks] *****************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : (check) would start (Linux)] ****************************
+ok: [m4s-q35-cuws-01] => {
+    "_start_cmds": [
+        "/usr/bin/sudo /etc/rc2.d/S89apache-pmma start && sleep 10"
+    ]
+}
+
+TASK [deploy_service : (check) AFTER start hooks] ******************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Push simulated start summary (Linux)] *******************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Start services (Linux) — using plan-defined commands] ***
+changed: [m4s-q35-cuws-01] => (item=/usr/bin/sudo /etc/rc2.d/S89apache-pmma start && sleep 10)
+
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Collect failed start results (for debug; do not fail yet)] ***
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+ok: [m4s-q35-cuws-01] => {
+    "msg": "start_failures: [\\n    \\"/usr/bin/sudo /etc/rc2.d/S89apache-pmma start && sleep 10\\"\\n]"
+}
+
+TASK [deploy_service : AFTER start hooks] **************************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Push start summary (Linux)] *****************************
+ok: [m4s-q35-cuws-01]
+
+TASK [Start root services (Windows)] *******************************************
+skipping: [m4s-q35-cuws-01]
+
+TASK [Health-check root services (Linux)] **************************************
+
+TASK [deploy_service : Build health list (Linux)] ******************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Debug raw health commands before fix] *******************
+ok: [m4s-q35-cuws-01] => {
+    "_health_cmds_raw": [
+        "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+    ]
+}
+
+TASK [deploy_service : Fix corrupted /devull references] *********************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Debug health commands after fix] ************************
+ok: [m4s-q35-cuws-01] => {
+    "_health_cmds": [
+        "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+    ]
+}
+
+TASK [deploy_service : (check) would health-check (Linux)] *********************
+ok: [m4s-q35-cuws-01] => {
+    "_health_cmds": [
+        "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+    ]
+}
+
+TASK [deploy_service : Push simulated health summary (Linux)] ******************
+skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Debug rendered health commands] *************************
+ok: [m4s-q35-cuws-01] => (item=ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull) => {
+    "msg": "Executing health check: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+}
+
+TASK [deploy_service : Health check (Linux)] ***********************************
+ok: [m4s-q35-cuws-01] => (item=ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull)
+
+TASK [deploy_service : Collect failed health results] **************************
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build failed health details] ****************************
+ok: [m4s-q35-cuws-01] => (item={'changed': False, 'stdout': '', 'stderr': '', 'rc': 1, 'cmd': "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull", 'start': '2025-09-18 22:31:10.774109', 'end': '2025-09-18 22:31:10.791664', 'delta': '0:00:00.017555', 'failed': False, 'msg': 'non-zero return code', 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull", '_uses_shell': True, 'expand_argument_vars': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': [], 'stderr_lines': [], 'failed_when_result': False, 'item': "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull", 'ansible_loop_var': 'item'})
+
+TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
+ok: [m4s-q35-cuws-01] => {
+    "_failed_health_details": [
+        {
+            "item": "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull",
+            "original_command": "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull",
+            "rc": 1,
+            "stderr": "",
+            "stdout": ""
+        }
+    ]
+}
+
+TASK [deploy_service : Push health summary (Linux) - record failure before terminating] ***
+ok: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Fail if any health checks failed] ***********************
+fatal: [m4s-q35-cuws-01]: FAILED! => {"changed": false, "msg": "HEALTH CHECK FAILURES on m4s-q35-cuws-01:\\n===================================================\\n\\n1 health check(s) failed:\\n\\nFAILED COMMAND 1:\\nTemplate: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\nRendered: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\nExit Code: 1\\nStandard Output: (empty)\\nStandard Error: (empty)\\n\\nCAUSE: Health checks indicate services are not running or responding properly.\\nThis will terminate the playbook per fail-fast orchestration requirements.\\n"}
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=25   changed=1    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0   
+m4s-q35-cuws-01            : ok=71   changed=4    unreachable=0    failed=1    skipped=36   rescued=0    ignored=0   
