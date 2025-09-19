@@ -1,46 +1,110 @@
-Here’s what’s going on and how to verify we’re executing the stop as you expect.
+#roles/deploy_service/tasks/health_only_linux.yml
+- name: Build health list (Linux) 
+  ansible.builtin.set_fact:
+    _health_cmds_raw: >-
+      {{
+        phase_services | map(attribute='containers') | sum(start=[])
+        | map(attribute='serviceCommands') | select('defined')
+        | map(attribute='health') | reject('equalto', None)
+        | map('trim') | reject('equalto','') | list
+      }}
 
-What’s Causing The Password Prompt
+- name: Debug raw health commands before fix
+  ansible.builtin.debug:
+    var: _health_cmds_raw
 
-Inline sudo in serviceCommands: Your execplan uses “sudo /usr/bin/systemctl …”. When Ansible runs shell/command tasks non-interactively, sudo may require a TTY and/or a password, so it errors or prompts.
-Different context than manual: You “became the service account” interactively and ran sudo successfully. Ansible runs as its own remote user without a TTY, so sudo behaves differently.
-What The Playbook Does Now
+- name: Fix corrupted /dev/null references
+  ansible.builtin.set_fact:
+    _health_cmds: "{{ _health_cmds_raw | map('regex_replace', 'devull', 'dev/null') | list }}"
 
-STOP uses the plan-defined stop exactly, but strips a leading “sudo” and runs it with Ansible privilege escalation (become). That avoids TTY/password issues while honoring your specific command path and arguments.
-START prefers systemd (restart) with become for systemctl-based starts, so “Active: since” updates correctly. Non-systemd start commands still run via shell.
-Verification Debug
+- name: Debug health commands after fix
+  ansible.builtin.debug:
+    var: _health_cmds
 
-I added a STOP debug that prints the original and executed stop commands so you can confirm the exact string:
-roles/deploy_service/tasks/stop_only_linux.yml: after computing _stop_clean
-Turn it on with -e options.DEBUG=true
-You’ll see output like:
-original_stop_cmds: ["sudo /usr/bin/systemctl stop rop_edgeservice"]
-executed_stop_cmds: ["/usr/bin/systemctl stop rop_edgeservice"]
-Why executed != original
+- block:
+    - name: (check) would health-check (Linux)
+      ansible.builtin.debug: { var: _health_cmds }
 
-We intentionally drop the leading “sudo” and use become: true so Ansible elevates privileges without an interactive prompt. Functionally, this is equivalent to your original command but non-interactive and reliable under Ansible.
-File References
+    - name: Push simulated health summary (Linux)
+      ansible.builtin.set_fact:
+        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': false} ] }}"
+      when: ansible_check_mode | default(false)
 
-execplan.yml: service commands defined for rop_edgeservice
-execplan.yml:1 (component)
-execplan.yml:9 (stop)
-STOP role (normalized + debug + become)
-roles/deploy_service/tasks/stop_only_linux.yml:1
-roles/deploy_service/tasks/stop_only_linux.yml:12
-roles/deploy_service/tasks/stop_only_linux.yml:18
-START role (systemd restart with become)
-roles/deploy_service/tasks/start_only_linux.yml:1
-roles/deploy_service/tasks/start_only_linux.yml:38
-How To Run And Inspect
+- block:
+    - name: Debug rendered health commands
+      ansible.builtin.debug:
+        msg: "Executing health check: {{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
+      loop: "{{ _health_cmds }}"
+      vars:
+        health_timeout: "{{ timeout | default(30) }}"
+        health_retry: "{{ retry | default(5) }}"
+        health_retry_delay: "{{ retryDelay | default(2) }}"
 
-Enable debug for STOP:
-ansible-playbook playbook.yml -e options.DEBUG=true
-Confirm in the STOP phase:
-“original_stop_cmds” equals “sudo /usr/bin/systemctl stop rop_edgeservice”
-“executed_stop_cmds” equals “/usr/bin/systemctl stop rop_edgeservice” (run with become)
-If You Require Executing The Literal sudo Line
+    - name: Health check (Linux)
+      ansible.builtin.shell: "{{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _health_cmds }}"
+      register: _health_out
+      failed_when: false
+      changed_when: false
+      vars:
+        health_timeout: "{{ timeout | default(30) }}"
+        health_retry: "{{ retry | default(5) }}"
+        health_retry_delay: "{{ retryDelay | default(2) }}"
 
-You can run the exact string including sudo, but then you must:
-Ensure the Ansible remote user has passwordless sudo for that command and is not subject to requiretty, or
-Use sudo’s non-interactive mode (sudo -n …) and set NOPASSWD rules. Without that, it will prompt/fail in Ansible.
-The current approach (strip sudo + become) is the safer Ansible pattern and achieves the same effect.
+    - name: Collect failed health results
+      ansible.builtin.set_fact:
+        _failed_health_results: "{{ _health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list }}"
+      when: (_health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0
+
+    - name: Build failed health details
+      ansible.builtin.set_fact:
+        _failed_health_details: "{{ (_failed_health_details | default([])) + [ {'item': item.item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string), 'original_command': item.item, 'rc': item.rc, 'stdout': (item.stdout | default('')) | trim, 'stderr': (item.stderr | default('')) | trim } ] }}"
+      loop: "{{ _failed_health_results }}"
+      vars:
+        health_timeout: "{{ timeout | default(30) }}"
+        health_retry: "{{ retry | default(5) }}"
+        health_retry_delay: "{{ retryDelay | default(2) }}"
+      when: _failed_health_results is defined
+
+    - name: Debug failed health checks (rc/stdout/stderr)
+      ansible.builtin.debug:
+        var: _failed_health_details
+      when: _failed_health_details is defined and _failed_health_details | length > 0
+
+    - name: Push health summary (Linux) - record failure before terminating
+      ansible.builtin.set_fact:
+        start_health_summary: >-
+          {{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': (_health_out is defined and (_health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0) | bool } ] }}
+      when: not (ansible_check_mode | default(false))
+
+    - name: Fail if any health checks failed
+      ansible.builtin.fail:
+        msg: |
+          HEALTH CHECK FAILURES on {{ inventory_hostname }}:
+          ===================================================
+          
+          {{ _failed_health_details | length }} health check(s) failed:
+          
+          {% for failure in _failed_health_details %}
+          FAILED COMMAND {{ loop.index }}:
+          Template: {{ failure.original_command }}
+          Rendered: {{ failure.item }}
+          Exit Code: {{ failure.rc }}
+          {% if failure.stdout | length > 0 %}
+          Standard Output:
+          {{ failure.stdout | indent(2) }}
+          {% else %}
+          Standard Output: (empty)
+          {% endif %}
+          {% if failure.stderr | length > 0 %}
+          Standard Error:
+          {{ failure.stderr | indent(2) }}
+          {% else %}
+          Standard Error: (empty)
+          {% endif %}
+          
+          {% endfor %}
+          CAUSE: Health checks indicate services are not running or responding properly.
+          This will terminate the playbook per fail-fast orchestration requirements.
+      when: _failed_health_details is defined and _failed_health_details | length > 0
