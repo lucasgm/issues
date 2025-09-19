@@ -1,116 +1,153 @@
-#roles/deploy_service/tasks/health_only_linux.yml
-- name: Build health list (Linux) 
-  ansible.builtin.set_fact:
-    _health_cmds_raw: >-
-      {{
-        phase_services | map(attribute='containers') | sum(start=[])
-        | map(attribute='serviceCommands') | select('defined')
-        | map(attribute='health') | reject('equalto', None)
-        | map('trim') | reject('equalto','') | list
-      }}
+#!/bin/bash
+set -x
+# Wrapper to execute a single health check command safely while repairing
+# any corruption of the /dev/null path (observed as /devull) introduced by
+# upstream templating / processing layers.
+#
+# Usage: health_check.sh <base64-encoded-command>
+# Optional environment variables:
+#   HC_DEBUG=1              Enable verbose debug tracing
+#   HC_TIMEOUT=<seconds>    Kill command if it exceeds timeout (uses timeout if available)
+#   HC_DRYRUN=1             Decode & repair only; do not execute
+# The script will:
+#   1. Decode the original command
+#   2. Repair occurrences of devull -> dev/null
+#   3. Ensure /dev/null exists and is a character device
+#   4. Execute the repaired command under bash -c
+#   5. Emit structured, easily grep/parseable log lines
+#
+# Output lines (markers + trailing JSON):
+#   STAGE: START
+#   ORIGINAL: <original>
+#   REPAIRED: <repaired>      (only if different)
+#   STAGE: EXECUTE
+#   RUNNING | DRYRUN
+#   RC: <exit_code>
+#   JSON: { structured result }
+#
+# JSON fields: original, repaired, changed(bool), rc, duration_ms, repaired_devnull(bool),
+# timeout_used(bool), dryrun(bool), reason(SUCCESS|DECODE_EMPTY|TIMEOUT|EXEC_ERROR), timestamp_iso
 
-- name: Debug raw health commands before fix
-  ansible.builtin.debug:
-    var: _health_cmds_raw
+set -o pipefail
+set -u
 
-- name: Prepare encoded health commands (execute as-is via wrapper)
-  ansible.builtin.set_fact:
-    _health_cmds_b64: "{{ _health_cmds_raw | map('b64encode') | list }}"
+# Build /dev/null path at runtime to avoid embedding the literal token
+# which has been observed to be corrupted in transit/logging.
+DN_A="/de"; DN_B="v/nu"; DN_C="ll"; DEVNULL="${DN_A}${DN_B}${DN_C}"
 
-- block:
-    - name: (check) would health-check (Linux)
-      ansible.builtin.debug: { var: _health_cmds_raw }
+debug() { [ "${HC_DEBUG:-0}" = "1" ] && echo "DEBUG: $*" >&2 || true; }
+ts_iso() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
+# Initialize epoch start with a portable fallback (seconds * 1000)
+EPOCH_START=$(date +%s%3N 2>"$DEVNULL" || echo $(( $(date +%s) * 1000 )))
+echo "STAGE: START"
+echo "SENTINEL: WRAPPER_BEGIN"
+debug "Wrapper start pid=$$"
+debug "Args count=$#"
+debug "Env: HC_DEBUG=${HC_DEBUG:-0} HC_TIMEOUT=${HC_TIMEOUT:-} HC_DRYRUN=${HC_DRYRUN:-0}"
 
-    - name: Push simulated health summary (Linux)
-      ansible.builtin.set_fact:
-        start_health_summary: "{{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': false} ] }}"
-      when: ansible_check_mode | default(false)
+ENCODED_INPUT="${1:-}"
+if [ -z "$ENCODED_INPUT" ]; then
+  echo "ERROR: no base64 input provided" >&2
+  exit 99
+fi
 
-- block:
-    - name: Debug rendered health commands (wrapper)
-      ansible.builtin.debug:
-        msg: "Executing health check (wrapper): {{ item | replace('{{timeout}}', health_timeout | string) | replace('{{retry}}', health_retry | string) | replace('{{retryDelay}}', health_retry_delay | string) }}"
-      loop: "{{ _health_cmds_raw }}"
-      vars:
-        health_timeout: "{{ timeout | default(30) }}"
-        health_retry: "{{ retry | default(5) }}"
-        health_retry_delay: "{{ retryDelay | default(2) }}"
+# Decode (tolerate newline stripping). base64 portability: use -d (GNU/BusyBox) or --decode.
+if command -v base64 >"$DEVNULL" 2>&1; then
+  CMD_ORIG=$(printf '%s' "$ENCODED_INPUT" | base64 -d 2>"$DEVNULL" || printf '%s' "$ENCODED_INPUT" | base64 --decode 2>"$DEVNULL" || true)
+else
+  echo "ERROR: base64 utility not found" >&2
+  exit 98
+fi
+debug "Decoded length=${#CMD_ORIG}"
 
-    - name: Health check (Linux via wrapper)
-      ansible.builtin.script:
-        cmd: roles/deploy_service/files/health_check.sh {{ item }}
-        executable: /bin/bash
-      loop: "{{ _health_cmds_b64 }}"
-      register: _health_out
-      failed_when: false
-      changed_when: false
-      environment:
-        HC_TIMEOUT: "{{ timeout | default(30) }}"
-        HC_DEBUG: "{{ (options.DEBUG | default(false)) | bool | ternary('1','0') }}"
+if [ -z "$CMD_ORIG" ]; then
+  echo "ERROR: failed to decode base64 command" >&2
+  echo "RC: 97"
+  echo "JSON: {\"reason\":\"DECODE_EMPTY\",\"rc\":97,\"timestamp_iso\":\"$(ts_iso)\"}"
+  exit 97
+fi
 
-    - name: Parse wrapper JSON from health results
-      ansible.builtin.set_fact:
-        _parsed_health: "{{ _health_out.results | default([]) | parse_health_results }}"
+# Repair corruption variants (defensive ordering: longest / explicit path first)
+CMD_FIXED=$(printf '%s' "$CMD_ORIG" \
+  | sed -e "s|/devull|$DEVNULL|g" \
+        -e "s| devull| $DEVNULL|g" \
+        -e "s|devull|$DEVNULL|g")
+debug "Applied repair filters"
 
-    - name: Collect failed health results
-      ansible.builtin.set_fact:
-        _failed_health_results: "{{ _parsed_health | selectattr('rc','defined') | selectattr('rc','ne',0) | list }}"
-      when: (_parsed_health | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0
+# Substitute unresolved templating placeholders (fallback defaults) if still present.
+# These placeholders should normally be rendered by Ansible/Jinja. If they reach here,
+# it indicates prior template rendering was bypassed. Provide safe numeric defaults.
+DEFAULT_TIMEOUT=${HC_FALLBACK_TIMEOUT:-10}
+DEFAULT_RETRY=${HC_FALLBACK_RETRY:-1}
+DEFAULT_RETRY_DELAY=${HC_FALLBACK_RETRY_DELAY:-1}
+if echo "$CMD_FIXED" | grep -q '{{timeout}}'; then
+  debug "Substituting fallback {{timeout}} -> $DEFAULT_TIMEOUT"
+  CMD_FIXED=${CMD_FIXED//'{{timeout}}'/$DEFAULT_TIMEOUT}
+fi
+if echo "$CMD_FIXED" | grep -q '{{retry}}'; then
+  debug "Substituting fallback {{retry}} -> $DEFAULT_RETRY"
+  CMD_FIXED=${CMD_FIXED//'{{retry}}'/$DEFAULT_RETRY}
+fi
+if echo "$CMD_FIXED" | grep -q '{{retryDelay}}'; then
+  debug "Substituting fallback {{retryDelay}} -> $DEFAULT_RETRY_DELAY"
+  CMD_FIXED=${CMD_FIXED//'{{retryDelay}}'/$DEFAULT_RETRY_DELAY}
+fi
 
-    - name: Build failed health details
-      ansible.builtin.set_fact:
-        _failed_health_details: >-
-          {{
-            (_failed_health_details | default([]))
-            + [ {
-                  'item': (item.json.repaired | default(item.json.original | default(''))),
-                  'original_command': (item.json.original | default('')),
-                  'rc': item.rc,
-                  'stdout': (item.stdout | default('')) | trim,
-                  'stderr': (item.stderr | default('')) | trim
-                } ]
-          }}
-      loop: "{{ _failed_health_results }}"
-      when: _failed_health_results is defined
+# Ensure /dev/null is present & correct
+if [ ! -c "$DEVNULL" ]; then
+  echo "WARN: /dev/null missing or not a char device; attempting restore" >&2
+  if [ -e "$DEVNULL" ]; then rm -f "$DEVNULL" || true; fi
+  mknod "$DEVNULL" c 1 3 2>"$DEVNULL" || true
+  chmod 666 "$DEVNULL" 2>"$DEVNULL" || true
+fi
+debug "/dev/null status: $(ls -l "$DEVNULL" 2>"$DEVNULL" || echo missing)"
 
-    - name: Debug failed health checks (rc/stdout/stderr)
-      ansible.builtin.debug:
-        var: _failed_health_details
-      when: _failed_health_details is defined and _failed_health_details | length > 0
+echo "ORIGINAL: $CMD_ORIG"
+REPAIRED_FLAG=false
+REPAIRED_DEVNULL=false
+if [ "$CMD_ORIG" != "$CMD_FIXED" ]; then
+  echo "REPAIRED: $CMD_FIXED"
+  REPAIRED_FLAG=true
+  if echo "$CMD_ORIG" | grep -q 'devull'; then REPAIRED_DEVNULL=true; fi
+fi
+echo "STAGE: EXECUTE"
+echo "SENTINEL: WRAPPER_EXEC"
+if [ "${HC_DRYRUN:-0}" = "1" ]; then
+  echo "DRYRUN"
+fi
 
-    - name: Push health summary (Linux) - record failure before terminating
-      ansible.builtin.set_fact:
-        start_health_summary: >-
-          {{ (start_health_summary | default([])) + [ {'component': 'all', 'start_fail': false, 'health_fail': (_health_out is defined and (_health_out.results | default([]) | selectattr('rc','defined') | selectattr('rc','ne',0) | list | length) > 0) | bool } ] }}
-      when: not (ansible_check_mode | default(false))
-
-    - name: Fail if any health checks failed
-      ansible.builtin.fail:
-        msg: |
-          HEALTH CHECK FAILURES on {{ inventory_hostname }}:
-          ===================================================
-          
-          {{ _failed_health_details | length }} health check(s) failed:
-          
-          {% for failure in _failed_health_details %}
-          FAILED COMMAND {{ loop.index }}:
-          Template: {{ failure.original_command }}
-          Rendered: {{ failure.item }}
-          Exit Code: {{ failure.rc }}
-          {% if failure.stdout | length > 0 %}
-          Standard Output:
-          {{ failure.stdout | indent(2) }}
-          {% else %}
-          Standard Output: (empty)
-          {% endif %}
-          {% if failure.stderr | length > 0 %}
-          Standard Error:
-          {{ failure.stderr | indent(2) }}
-          {% else %}
-          Standard Error: (empty)
-          {% endif %}
-          
-          {% endfor %}
-          CAUSE: Health checks indicate services are not running or responding properly.
-          This will terminate the playbook per fail-fast orchestration requirements.
-      when: _failed_health_details is defined and _failed_health_details | length > 0
+REASON="SUCCESS"
+TIMEOUT_USED=false
+if [ "${HC_DRYRUN:-0}" = "1" ]; then
+  RC=0
+else
+  echo "RUNNING"
+  if [ -n "${HC_TIMEOUT:-}" ] && command -v timeout >"$DEVNULL" 2>&1; then
+    TIMEOUT_USED=true
+    debug "Executing with timeout ${HC_TIMEOUT}s"
+    timeout --preserve-status "${HC_TIMEOUT}" bash -c "$CMD_FIXED" || RC=$?
+    RC=${RC:-$?}
+    if [ "$RC" = "124" ]; then REASON="TIMEOUT"; fi
+  else
+    debug "Executing without timeout"
+    bash -c "$CMD_FIXED" || RC=$?
+    RC=${RC:-$?}
+  fi
+fi
+if [ "$RC" -ne 0 ] && [ "$REASON" = "SUCCESS" ]; then REASON="EXEC_ERROR"; fi
+echo "RC: $RC"
+EPOCH_END=$(date +%s%3N 2>"$DEVNULL" || echo $(( $(date +%s) * 1000 )))
+DURATION=$((EPOCH_END - EPOCH_START))
+JSON_OBJ=$(printf '{"original":%s,"repaired":%s,"changed":%s,"rc":%s,"duration_ms":%s,"repaired_devnull":%s,"timeout_used":%s,"dryrun":%s,"reason":%s,"timestamp_iso":%s}' \
+  "\"$(printf '%s' "$CMD_ORIG" | sed 's/"/\\"/g')\"" \
+  "\"$(printf '%s' "$CMD_FIXED" | sed 's/"/\\"/g')\"" \
+  "$REPAIRED_FLAG" \
+  "$RC" \
+  "$DURATION" \
+  "$REPAIRED_DEVNULL" \
+  "$TIMEOUT_USED" \
+  "${HC_DRYRUN:-0}" \
+  "\"$REASON\"" \
+  "\"$(ts_iso)\"")
+echo "JSON: $JSON_OBJ"
+exit $RC
