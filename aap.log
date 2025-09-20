@@ -1,4 +1,4 @@
-Identity added: /runner/artifacts/10984/ssh_key_data (svcdplyaap@intcx.net)
+Identity added: /runner/artifacts/11099/ssh_key_data (svcdplyaap@intcx.net)
 SSH password: 
 [WARNING]: Invalid characters were found in group names but not replaced, use
 -vvvv to see details
@@ -81,7 +81,7 @@ TASK [Initialize Artifactory URL cache] ****************************************
 ok: [localhost]
 
 TASK [Query Artifactory for GAVC keys] *****************************************
-ok: [localhost] => (item=com.theice.apache.apache-pmma:ICEapache-pmma:3.0.1:rpm)
+ok: [localhost] => (item=com.theice.rop.edgeservice:ICErop_edgeservice:0.0.32:rpm)
 
 TASK [Build final_url_cache from responses] ************************************
 ok: [localhost]
@@ -99,150 +99,179 @@ TASK [Build per-host phase map (STOP/UNINSTALL/DOWNLOAD/INSTALL/START/HEALTH_CHE
 ok: [localhost]
 
 TASK [Register dynamic hosts with per-host variables] **************************
-changed: [localhost] => (item=m4s-q35-cuws-01)
+changed: [localhost] => (item=m4s-d545-ifroes-01.intcx.net)
 
 PLAY [STOP phase (parallel roots, then sequential)] ****************************
 [WARNING]: Using any_errors_fatal with the free strategy is not supported, as
 tasks are executed independently on each host
 
 TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Stop (Linux) — parallel dependency-free components] **********************
-skipping: [m4s-q35-cuws-01]
+
+TASK [deploy_service : Build stop/stopHealth (Linux)] **************************
+ok: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Fix corrupted /devull references in stop health commands] ***
+ok: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Normalize stop commands for become (strip leading sudo)] ***
+ok: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : DEBUG stop commands (orig vs executed)] *****************
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : (check) would stop (Linux)] *****************************
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : (check) would verify stopped (Linux)] *******************
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Stop services (Linux) — using plan-defined commands] ****
+changed: [m4s-d545-ifroes-01.intcx.net] => (item=sudo /usr/bin/systemctl stop rop_edgeservice)
+
+TASK [deploy_service : Verify stopped (Linux)] *********************************
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=! systemctl status rop_edgeservice)
 
 TASK [Stop (Windows) — parallel dependency-free components] ********************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Stop — sequential remainder (component-ordered)] *************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 PLAY [UNINSTALL phase (parallel roots, then sequential)] ***********************
 
 TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Uninstall — parallel dependency-free components (Linux)] *****************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Uninstall — parallel dependency-free components (Windows)] ***************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Uninstall — sequential remainder (component-ordered)] ********************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 PLAY [DOWNLOAD phase (parallel roots, then sequential)] ************************
 
 TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Download artifacts — parallel dependency-free components] ****************
 
 TASK [deploy_service : ansible.builtin.setup] **********************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Initialize download summary for this service] ***********
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Reset async job list for this service] ******************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build download list] ************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Download each container (check-safe include)] ***********
 [WARNING]: While constructing a mapping from
 /runner/project/roles/deploy_service/tasks/download_artifact.yml, line 134,
 column 7, found a duplicate dict key (when). Using last defined value only.
-included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-q35-cuws-01 => (item=ICEapache-pmma:3.0.1)
+included: /runner/project/roles/deploy_service/tasks/download_artifact.yml for m4s-d545-ifroes-01.intcx.net => (item=ICErop_edgeservice:0.0.32)
 
 TASK [deploy_service : Gather minimal facts (for os_family)] *******************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Normalise Artifactory vars] *****************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Derive artifact id and extension] ***********************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build cache key for this artefact] **********************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Try Artifactory URL from localhost cache] ***************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Determine OS family (lowercased)] ***********************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Compute destination directory] **************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Compute filename] ***************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Compute full destination path] **************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Assert dest_path is a valid string] *********************
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "changed": false,
     "msg": "All assertions passed"
 }
 
 TASK [deploy_service : ansible.builtin.debug] **********************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : ansible.builtin.set_fact] *******************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build GAVC search URL (no whitespace)] ******************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Search Artifactory (GAVC)] ******************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Get first downloadable URL] *****************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Diagnose empty search results] **************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Diagnose search request failure] ************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Fail early if nothing found] ****************************
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "changed": false,
     "msg": "All assertions passed"
 }
 
 TASK [deploy_service : Download artefact (Linux)] ******************************
-changed: [m4s-q35-cuws-01]
+changed: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Track async download job] *******************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Mark download result] ***********************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Record successful download] *****************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
+FAILED - RETRYING: [m4s-d545-ifroes-01.intcx.net]: Wait for all async downloads to finish (450 retries left).
 
 TASK [deploy_service : Wait for all async downloads to finish] *****************
-ok: [m4s-q35-cuws-01] => (item=None)
-ok: [m4s-q35-cuws-01]
+changed: [m4s-d545-ifroes-01.intcx.net] => (item=None)
+changed: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build jobId -> dest map] ********************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Collate completed RPM downloads] ************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Record completed RPM paths] *****************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : DEBUG downloaded RPMs for this host] ********************
+ok: [m4s-d545-ifroes-01.intcx.net] => {
+    "msg": "downloaded_rpms: [\\n    \\"/tmp/ICErop_edgeservice-0.0.32.rpm\\"\\n]"
+}
 
 TASK [Download artifacts — sequential remainder (component-ordered)] ***********
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 PLAY [Validate DOWNLOAD phase results] *****************************************
 
@@ -266,248 +295,259 @@ skipping: [localhost]
 PLAY [INSTALL roots (level 0, parallel)] ***************************************
 
 TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Install root components (Linux)] *****************************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Install root components (Windows)] ***************************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 PLAY [INSTALL phase (legacy root+sequential)] **********************************
 
 TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Host-wide install (Linux) — legacy roots] ********************************
 
 TASK [deploy_service : Collect RPM paths and INSTALL hooks (Linux)] ************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Prefer RPM paths captured during DOWNLOAD (if any)] *****
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Normalize proxy value] **********************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build proxy flag and repo flags] ************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Derive package NAMES from RPM files] ********************
-ok: [m4s-q35-cuws-01] => (item=/tmp/ICEapache-pmma-3.0.1.rpm)
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=/tmp/ICErop_edgeservice-0.0.32.rpm)
 
 TASK [deploy_service : Derive package NEVRs from RPM files] ********************
-ok: [m4s-q35-cuws-01] => (item=/tmp/ICEapache-pmma-3.0.1.rpm)
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=/tmp/ICErop_edgeservice-0.0.32.rpm)
 
 TASK [deploy_service : Collect unique package names and file NEVRs] ************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Check which package names are already installed] ********
-ok: [m4s-q35-cuws-01] => (item=ICEapache-pmma)
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=ICErop_edgeservice)
 
 TASK [deploy_service : Build list of installed package names] ******************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Get installed NEVRs for those names] ********************
-ok: [m4s-q35-cuws-01] => (item=ICEapache-pmma)
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=ICErop_edgeservice)
 
 TASK [deploy_service : Collect installed NEVRs (unique)] ***********************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build rpm join lists] ***********************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Choose removal candidates (NEVRs preferred, else names)] ***
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Join removal candidate list (no quotes, no empties)] ****
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build remove + install/reinstall commands (yum only)] ***
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : DEBUG (temp): planned remove/install commands + inputs] ***
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : (check) BEFORE INSTALL hooks to run] ********************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : (check) Would run remove + yum install (with reinstall fallback)] ***
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : (check) AFTER INSTALL hooks to run] *********************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Record simulated install summary (Linux, check mode)] ***
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : BEFORE INSTALL hooks] ***********************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Skip if no RPMs to install on this host] ****************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : DEBUG before-remove: installed state for target names] ***
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Remove currently-installed packages (NEVRs preferred, fallback to names)] ***
-changed: [m4s-q35-cuws-01]
+changed: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : DEBUG remove result (rc/stdout/stderr)] *****************
-ok: [m4s-q35-cuws-01] => {
-    "msg": "rc: 0\\nstdout:\\nContinue with preremove checks\\n  Does not appear to be a container type.\\n  User ID: apache, matches Apache configuration package type.\\n  Found NO open file in /var/opt/apache24a/server/theice.com/pmma\\n  Removing sudo include file for: apache\\n  Remove Start Script S89apache-pmma\\n  Removing application directory: /var/opt/apache24a/server/theice.com/pmma\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICEapache-pmma-3.0.1-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + ARTIFACTID=ICEapache-pmma\\n  + CRONFILE=\\n  + GID=1500\\n  + GROUP=apache\\n  + HOMEDIR=\\n  + POSTINSTALLHOOK=\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=\\n  + RCNAME=S89apache-pmma\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=apache\\n  + USID=1500\\n  + SYSTEMD=pmma\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/apache24a/server/theice.com/pmma/logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=\\n  + '[' offX '!=' X ']'\\n  + echo 'Continue with preremove checks'\\n  + check_service_files\\n  /var/tmp/rpm-tmp.fhBjmg: line 91: check_service_files: command not found\\n  + isContainerType apache /var/opt/apache24a/server/theice.com/pmma\\n  ++ echo apache\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varUSER=apache\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = jbossX ')' -o '(' apacheX = nodejsX ')' ']'\\n  ++ dirname /var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = apacheX ')' -a '(' /var/opt/apache24a/server/theice.com = /var/opt ')' ']'\\n  ++ dirname /var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = nginxX ')' -a '(' /var/opt/apache24a/server/theice.com = /var/opt ')' ']'\\n  + echo 'Does not appear to be a container type.'\\n  + return 1\\n  + IsWebServerConf apache /var/opt/apache24a/server/theice.com/pmma\\n  ++ echo apache\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varUSER=apache\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  ++ dirname /var/opt/apache24a/server/theice.com/pmma\\n  + '[' '(' apacheX = apacheX ')' -a '(' /var/opt/apache24a/server/theice.com '!=' /var/opt ')' ']'\\n  + echo 'User ID: apache, matches Apache configuration package type.'\\n  + return 0\\n  + isPidLive /var/opt/apache24a/server/theice.com/pmma/logs\\n  + varAPPLOGDIR=/var/opt/apache24a/server/theice.com/pmma/logs\\n  + '[' -d /var/opt/apache24a/server/theice.com/pmma/logs ']'\\n  ++ find /var/opt/apache24a/server/theice.com/pmma/logs -name '*pid*'\\n  + return 1\\n  + hasOpenFile /var/opt/apache24a/server/theice.com/pmma\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + '[' -d /var/opt/apache24a/server/theice.com/pmma/logs ']'\\n  + case $OSTYPE in\\n  + checkOpenFile /var/opt/apache24a/server/theice.com/pmma\\n  + varAPPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + lsof +D /var/opt/apache24a/server/theice.com/pmma\\n  + grep /var/opt/apache24a/server/theice.com/pmma\\n  + echo 'Found NO open file in /var/opt/apache24a/server/theice.com/pmma'\\n  + return 1\\n  + '[' -n /var/opt/apache24a/server/theice.com/pmma/ ']'\\n  + runHook\\n  + '[' -f /var/opt/apache24a/server/theice.com/pmma/ ']'\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/etc/rc2.d/S89apache-pmma: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/rv.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/pdk.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/ord-pr.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/mime.types: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/m4s.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/m4i.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/httpd-2.4.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/c6s.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/c6i.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/at-pr.conf: remove failed: No such file or directory\\n  warning: file /var/opt/apache24a/server/theice.com/pmma/environments/all/conf/all.conf: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/apache24a/server/theice.com/pmma\\n  + ARTIFACTID=ICEapache-pmma\\n  + CRONFILE=\\n  + GID=1500\\n  + GROUP=apache\\n  + HOMEDIR=\\n  + POSTINSTALLHOOK=\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=S89apache-pmma\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=apache\\n  + USID=1500\\n  + SYSTEMD=pmma\\n  + STARTSCRIPT=/etc/rc2.d/S89apache-pmma\\n  + STARTONBOOT=1\\n  + PACKAGENAME=ICEapache-pmma\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICEapache-pmma ']'\\n  + echo 'Removing sudo include file for: apache'\\n  + rm /etc/sudoers.d/ICEapache-pmma\\n  + '[' -f /etc/rc2.d/S89apache-pmma ']'\\n  + echo 'Remove Start Script S89apache-pmma'\\n  + rm /etc/rc2.d/S89apache-pmma\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/apache24a/server/theice.com/pmma'\\n  + '[' -n /var/opt/apache24a/server/theice.com/pmma ']'\\n  + '[' /var/opt/apache24a/server/theice.com/pmma '!=' / ']'\\n  + '[' /var/opt/apache24a/server/theice.com/pmma '!=' /var/opt ']'\\n  + rm -rf /var/opt/apache24a/server/theice.com/pmma\\n"
+ok: [m4s-d545-ifroes-01.intcx.net] => {
+    "msg": "rc: 0\\nstdout:\\npkg.preuncheck is set to off, ignore all preremove checks.\\n  Removing sudo include file for: svc_ropworker\\n  Removing application directory: /var/opt/rop_edge\\nstderr:\\n+ /usr/bin/sudo rpm -e --nodeps ICErop_edgeservice-0.0.38_SNAPSHOT-1.noarch\\n  + '[' -f /tmp/FORCEREMOVAL ']'\\n  ++ uname\\n  + OSTYPE=Linux\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_edge\\n  + ARTIFACTID=ICErop_edgeservice\\n  + CRONFILE=\\n  + GID=8021\\n  + GROUP=svc_ropworker\\n  + HOMEDIR=/home/svc_ropworker\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PRECHECK=off\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + PREUNCHECK=off\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc_ropworker\\n  + USID=8021\\n  + SYSTEMD=rop_edgeservice\\n  + flatAntParam\\n  + set +x\\n  + APPLOGDIR=/var/opt/rop_edge/logs\\n  + '[' Linux = SunOS ']'\\n  + CMD_TR=/usr/bin/tr\\n  ++ echo off\\n  ++ /usr/bin/tr '[:upper:]' '[:lower:]'\\n  + varPRCK=off\\n  + '[' offX '!=' offX ']'\\n  + echo 'pkg.preuncheck is set to off, ignore all preremove checks.'\\n  + check_service_files\\n  + [[ -z rop_edgeservice ]]\\n  ++ systemctl is-enabled rop_edgeservice\\n  + is_service_enabled=disabled\\n  + [[ disabled == \\\\e\\\\n\\\\a\\\\b\\\\l\\\\e\\\\d ]]\\n  + systemdfile=/usr/lib/systemd/system/rop_edgeservice.service\\n  + [[ -f /usr/lib/systemd/system/rop_edgeservice.service ]]\\n  + rm /usr/lib/systemd/system/rop_edgeservice.service\\n  + systemctl daemon-reload\\n  + '[' -n /var/opt/rop_edge/ ']'\\n  + runHook\\n  + '[' -f /var/opt/rop_edge/ ']'\\n  + exit 0\\n  warning: file /var/opt/rop_edge/environments/m4s-u8/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-u8/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-pr/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-pr/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-i4/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-i4/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-d545/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/m4s-d545/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/c6s-pr/config/scheduler.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/c6s-pr/config/config.json: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/version_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/rop_edgeservice.service: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/postinstallhook.sh: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/env_file: remove failed: No such file or directory\\n  warning: file /var/opt/rop_edge/environments/all/docs/swagger.json: remove failed: No such file or directory\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + APPDIR=/var/opt/rop_edge\\n  + ARTIFACTID=ICErop_edgeservice\\n  + CRONFILE=\\n  + GID=8021\\n  + GROUP=svc_ropworker\\n  + HOMEDIR=/home/svc_ropworker\\n  + POSTINSTALLHOOK=postinstallhook.sh\\n  + POSTREMOVEHOOK=\\n  + PREINSTALLHOOK=\\n  + PREREMOVEHOOK=\\n  + RCNAME=\\n  + RMAD=\\n  + SCRIPTS=\\n  + SYMLINK=\\n  + USER=svc_ropworker\\n  + USID=8021\\n  + SYSTEMD=rop_edgeservice\\n  + STARTSCRIPT=\\n  + STARTONBOOT=\\n  + PACKAGENAME=ICErop_edgeservice\\n  + flatAntParam\\n  + set +x\\n  + MAIN_SUDOERS=/etc/sudoers\\n  ++ uname -a\\n  ++ cut -d ' ' -f 1\\n  + OS=Linux\\n  + '[' Linux = SunOS ']'\\n  + SUDOERSINC=/etc/sudoers.d\\n  + INSTANCES=0\\n  + '[' 0 -gt 0 ']'\\n  + SYMLINK=\\n  + '[' -n '' ']'\\n  + '[' -f /etc/sudoers.d/ICErop_edgeservice ']'\\n  + echo 'Removing sudo include file for: svc_ropworker'\\n  + rm /etc/sudoers.d/ICErop_edgeservice\\n  + '[' -f /etc/rc2.d/ ']'\\n  + '[' x = x ']'\\n  + echo 'Removing application directory: /var/opt/rop_edge'\\n  + '[' -n /var/opt/rop_edge ']'\\n  + '[' /var/opt/rop_edge '!=' / ']'\\n  + '[' /var/opt/rop_edge '!=' /var/opt ']'\\n  + rm -rf /var/opt/rop_edge\\n"
 }
 
 TASK [deploy_service : Verify removals (non-fatal check)] **********************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : DEBUG after-remove verification] ************************
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "msg": "remove_verify_rc: 0\\nremove_verify_stdout:\\n\\nremove_verify_stderr:\\n"
 }
 
 TASK [deploy_service : Decide install mode (install vs reinstall)] *************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Run yum install (fresh, after successful removals)] *****
-changed: [m4s-q35-cuws-01]
+changed: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Run yum reinstall (same-version fallback when removal didn’t occur)] ***
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : DEBUG install/reinstall result (rc/stdout/stderr)] ******
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "msg": "reinstall_mode: False\\nrc: n/a\\nstdout:\\n\\nstderr:\\n"
 }
 
 TASK [deploy_service : Fail install if yum returned non-zero] ******************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : DEBUG after-install: installed state for target names] ***
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Show after-install rpm query results] *******************
+ok: [m4s-d545-ifroes-01.intcx.net] => {
+    "msg": "rpm_q_summary (after-install):\\n=== rpm -q ICErop_edgeservice ===\\n  ICErop_edgeservice-0.0.32-1.noarch\\n"
+}
 
 TASK [deploy_service : AFTER INSTALL hooks] ************************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Record install summary (Linux)] *************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Host-wide install (Windows) — legacy roots] ******************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 PLAY [ROOT START + HEALTH (parallel for no-deps)] ******************************
 
 TASK [ansible.builtin.setup] ***************************************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Start root services (Linux)] *********************************************
 
 TASK [deploy_service : Build start & hooks (Linux)] ****************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Derive systemdon-systemd start command groups] ********
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : (check) BEFORE start hooks] *****************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : (check) would start (Linux)] ****************************
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "_start_cmds": [
-        "/usr/bin/sudo /usr/bin/systemctl start pmma && sleep 10"
+        "sudo /usr/bin/systemctl start rop_edgeservice"
     ]
 }
 
 TASK [deploy_service : (check) AFTER start hooks] ******************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Push simulated start summary (Linux)] *******************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Start services (Linux) — using plan-defined commands] ***
-changed: [m4s-q35-cuws-01] => (item=/usr/bin/sudo /usr/bin/systemctl start pmma && sleep 10)
+changed: [m4s-d545-ifroes-01.intcx.net] => (item=sudo /usr/bin/systemctl start rop_edgeservice)
 
-TASK [deploy_service : BEFORE start hooks] *************************************
-skipping: [m4s-q35-cuws-01]
-
-TASK [deploy_service : Collect failed start results (for debug; do not fail yet)] ***
-ok: [m4s-q35-cuws-01]
-
-TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
-ok: [m4s-q35-cuws-01] => {
-    "msg": "start_failures: [\\n    \\"/usr/bin/sudo /usr/bin/systemctl start pmma && sleep 10\\"\\n]"
+TASK [deploy_service : DEBUG start results (rc/stdout/stderr)] *****************
+ok: [m4s-d545-ifroes-01.intcx.net] => (item={'changed': True, 'stdout': '', 'stderr': '', 'rc': 0, 'cmd': 'sudo /usr/bin/systemctl start rop_edgeservice', 'start': '2025-09-19 20:11:03.072440', 'end': '2025-09-19 20:11:03.127489', 'delta': '0:00:00.055049', 'msg': '', 'invocation': {'module_args': {'executable': '/bin/bash', '_raw_params': 'sudo /usr/bin/systemctl start rop_edgeservice', '_uses_shell': True, 'expand_argument_vars': True, 'stdin_add_newline': True, 'strip_empty_ends': True, 'argv': None, 'chdir': None, 'creates': None, 'removes': None, 'stdin': None}}, 'stdout_lines': [], 'stderr_lines': [], 'failed': False, 'failed_when_result': False, 'item': 'sudo /usr/bin/systemctl start rop_edgeservice', 'ansible_loop_var': 'item'}) => {
+    "msg": "command: sudo /usr/bin/systemctl start rop_edgeservice\\nrc: 0\\nstdout:\\n\\nstderr:\\n"
 }
 
+TASK [deploy_service : BEFORE start hooks] *************************************
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Collect failed start results (for debug; do not fail yet)] ***
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Debug failed starts (rc/stdout/stderr)] *****************
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
+TASK [deploy_service : Fail if any start commands failed] **********************
+skipping: [m4s-d545-ifroes-01.intcx.net]
+
 TASK [deploy_service : AFTER start hooks] **************************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Push start summary (Linux)] *****************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Start root services (Windows)] *******************************************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [Health-check root services (Linux)] **************************************
 
 TASK [deploy_service : Build health list (Linux)] ******************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Debug raw health commands before fix] *******************
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "_health_cmds_raw": [
-        "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+        "systemctl status rop_edgeservice"
     ]
 }
 
 TASK [deploy_service : Prepare encoded health commands (execute as-is via wrapper)] ***
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : (check) would health-check (Linux)] *********************
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "_health_cmds_raw": [
-        "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+        "systemctl status rop_edgeservice"
     ]
 }
 
 TASK [deploy_service : Push simulated health summary (Linux)] ******************
-skipping: [m4s-q35-cuws-01]
+skipping: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Debug rendered health commands (wrapper)] ***************
-ok: [m4s-q35-cuws-01] => (item=ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull) => {
-    "msg": "Executing health check (wrapper): ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull"
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=systemctl status rop_edgeservice) => {
+    "msg": "Executing health check (wrapper): systemctl status rop_edgeservice"
 }
 
 TASK [deploy_service : Health check (Linux via wrapper)] ***********************
-ok: [m4s-q35-cuws-01] => (item=cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==)
+ok: [m4s-d545-ifroes-01.intcx.net] => (item=c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=)
 
 TASK [deploy_service : Parse wrapper JSON from health results] *****************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Collect failed health results] **************************
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Build failed health details] ****************************
-ok: [m4s-q35-cuws-01] => (item={'item': 'cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==', 'rc': 1, 'json': {'original': "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull", 'repaired': "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull", 'changed': False, 'rc': 1, 'duration_ms': 30, 'repaired_devnull': False, 'timeout_used': True, 'dryrun': 0, 'reason': 'EXEC_ERROR', 'timestamp_iso': '2025-09-19T04:13:43Z'}, 'stdout': '+ set -o pipefail\\r\\n+ set -u\\r\\n+ DN_A=/de\\r\\n+ DN_B=vu\\r\\n+ DN_C=ll\\r\\n+ DEVNULL=/devull\\r\\n++ date +%s%3N\\r\\n+ EPOCH_START=1758255223588\\r\\n+ echo \\'STAGE: START\\'\\r\\nSTAGE: START\\r\\n+ echo \\'SENTINEL: WRAPPER_BEGIN\\'\\r\\nSENTINEL: WRAPPER_BEGIN\\r\\n+ debug \\'Wrapper start pid=3348857\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ debug \\'Args count=1\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ debug \\'Env: HC_DEBUG=0 HC_TIMEOUT=30 HC_DRYRUN=0\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ ENCODED_INPUT=cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==\\r\\n+ \\'[\\' -z cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA== \\']\\'\\r\\n+ command -v base64\\r\\n++ printf %s cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==\\r\\n++ base64 -d\\r\\n+ CMD_ORIG=\\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+ debug \\'Decoded length=91\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ \\'[\\' -z \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\' \\']\\'\\r\\n++ printf %s \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n++ sed -e \\'s|/devull|/devull|g\\' -e \\'s| devull| /devull|g\\' -e \\'s|devull|/devull|g\\'\\r\\n+ CMD_FIXED=\\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+ debug \\'Applied repair filters\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ DEFAULT_TIMEOUT=10\\r\\n+ DEFAULT_RETRY=1\\r\\n+ DEFAULT_RETRY_DELAY=1\\r\\n+ echo \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+ grep -q \\'{{timeout}}\\'\\r\\n+ echo \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+ grep -q \\'{{retry}}\\'\\r\\n+ echo \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+ grep -q \\'{{retryDelay}}\\'\\r\\n+ \\'[\\' \\'!\\' -c /devull \\']\\'\\r\\n++ ls -l /devull\\r\\n+ debug \\'/devull status: crw-rw-rw- 1 root root 1, 3 Apr 17  2024 /devull\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ echo \\'ORIGINAL: ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\nORIGINAL: ps -ef |grep -i apache| grep -i pmma|grep -vE \\'spool|grep|bash|color=auto|mail\\' &>/devull\\r\\n+ REPAIRED_FLAG=false\\r\\n+ REPAIRED_DEVNULL=false\\r\\n+ \\'[\\' \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\' \\'!=\\' \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\' \\']\\'\\r\\n+ echo \\'STAGE: EXECUTE\\'\\r\\nSTAGE: EXECUTE\\r\\n+ echo \\'SENTINEL: WRAPPER_EXEC\\'\\r\\nSENTINEL: WRAPPER_EXEC\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ REASON=SUCCESS\\r\\n+ TIMEOUT_USED=false\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ echo RUNNING\\r\\nRUNNING\\r\\n+ \\'[\\' -n 30 \\']\\'\\r\\n+ command -v timeout\\r\\n+ TIMEOUT_USED=true\\r\\n+ debug \\'Executing with timeout 30s\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ timeout --preserve-status 30 bash -c \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+ RC=1\\r\\n+ RC=1\\r\\n+ \\'[\\' 1 = 124 \\']\\'\\r\\n+ \\'[\\' 1 -ne 0 \\']\\'\\r\\n+ \\'[\\' SUCCESS = SUCCESS \\']\\'\\r\\n+ REASON=EXEC_ERROR\\r\\n+ echo \\'RC: 1\\'\\r\\nRC: 1\\r\\n++ date +%s%3N\\r\\n+ EPOCH_END=1758255223618\\r\\n+ DURATION=30\\r\\n+++ printf %s \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+++ sed \\'s/"/\\\\\\\\"/g\\'\\r\\n+++ printf %s \\'ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull\\'\\r\\n+++ sed \\'s/"/\\\\\\\\"/g\\'\\r\\n+++ ts_iso\\r\\n+++ date -u +%Y-%m-%dT%H:%M:%SZ\\r\\n++ printf \\'{"original":%s,"repaired":%s,"changed":%s,"rc":%s,"duration_ms":%s,"repaired_devnull":%s,"timeout_used":%s,"dryrun":%s,"reason":%s,"timestamp_iso":%s}\\' \\'"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull"\\' \\'"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull"\\' false 1 30 false true 0 \\'"EXEC_ERROR"\\' \\'"2025-09-19T04:13:43Z"\\'\\r\\n+ JSON_OBJ=\\'{"original":"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull","repaired":"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull","changed":false,"rc":1,"duration_ms":30,"repaired_devnull":false,"timeout_used":true,"dryrun":0,"reason":"EXEC_ERROR","timestamp_iso":"2025-09-19T04:13:43Z"}\\'\\r\\n+ echo \\'JSON: {"original":"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull","repaired":"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'\\\\\\'\\'spool|grep|bash|color=auto|mail\\'\\\\\\'\\' &>/devull","changed":false,"rc":1,"duration_ms":30,"repaired_devnull":false,"timeout_used":true,"dryrun":0,"reason":"EXEC_ERROR","timestamp_iso":"2025-09-19T04:13:43Z"}\\'\\r\\nJSON: {"original":"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'spool|grep|bash|color=auto|mail\\' &>/devull","repaired":"ps -ef |grep -i apache| grep -i pmma|grep -vE \\'spool|grep|bash|color=auto|mail\\' &>/devull","changed":false,"rc":1,"duration_ms":30,"repaired_devnull":false,"timeout_used":true,"dryrun":0,"reason":"EXEC_ERROR","timestamp_iso":"2025-09-19T04:13:43Z"}\\r\\n+ exit 1', 'stderr': 'Shared connection to m4s-q35-cuws-01.adm.intcx.net closed.'})
+ok: [m4s-d545-ifroes-01.intcx.net] => (item={'item': 'c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=', 'rc': 143, 'json': {'original': 'systemctl status rop_edgeservice', 'repaired': 'systemctl status rop_edgeservice', 'changed': False, 'rc': 143, 'duration_ms': 30024, 'repaired_devnull': False, 'timeout_used': True, 'dryrun': 0, 'reason': 'EXEC_ERROR', 'timestamp_iso': '2025-09-20T00:11:34Z'}, 'stdout': '+ set -o pipefail\\r\\n+ set -u\\r\\n+ DN_A=/de\\r\\n+ DN_B=vu\\r\\n+ DN_C=ll\\r\\n+ DEVNULL=/devull\\r\\n++ date +%s%3N\\r\\n+ EPOCH_START=1758327063995\\r\\n+ echo \\'STAGE: START\\'\\r\\nSTAGE: START\\r\\n+ echo \\'SENTINEL: WRAPPER_BEGIN\\'\\r\\nSENTINEL: WRAPPER_BEGIN\\r\\n+ debug \\'Wrapper start pid=685790\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ debug \\'Args count=1\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ debug \\'Env: HC_DEBUG=0 HC_TIMEOUT=30 HC_DRYRUN=0\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ ENCODED_INPUT=c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=\\r\\n+ \\'[\\' -z c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U= \\']\\'\\r\\n+ command -v base64\\r\\n++ printf %s c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=\\r\\n++ base64 -d\\r\\n+ CMD_ORIG=\\'systemctl status rop_edgeservice\\'\\r\\n+ debug \\'Decoded length=32\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ \\'[\\' -z \\'systemctl status rop_edgeservice\\' \\']\\'\\r\\n++ printf %s \\'systemctl status rop_edgeservice\\'\\r\\n++ sed -e \\'s|/devull|/devull|g\\' -e \\'s| devull| /devull|g\\' -e \\'s|devull|/devull|g\\'\\r\\n+ CMD_FIXED=\\'systemctl status rop_edgeservice\\'\\r\\n+ debug \\'Applied repair filters\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ DEFAULT_TIMEOUT=10\\r\\n+ DEFAULT_RETRY=1\\r\\n+ DEFAULT_RETRY_DELAY=1\\r\\n+ echo \\'systemctl status rop_edgeservice\\'\\r\\n+ grep -q \\'{{timeout}}\\'\\r\\n+ echo \\'systemctl status rop_edgeservice\\'\\r\\n+ grep -q \\'{{retry}}\\'\\r\\n+ echo \\'systemctl status rop_edgeservice\\'\\r\\n+ grep -q \\'{{retryDelay}}\\'\\r\\n+ \\'[\\' \\'!\\' -c /devull \\']\\'\\r\\n++ ls -l /devull\\r\\n+ debug \\'/devull status: crw-rw-rw- 1 root root 1, 3 Mar 21 13:50 /devull\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ echo \\'ORIGINAL: systemctl status rop_edgeservice\\'\\r\\nORIGINAL: systemctl status rop_edgeservice\\r\\n+ REPAIRED_FLAG=false\\r\\n+ REPAIRED_DEVNULL=false\\r\\n+ \\'[\\' \\'systemctl status rop_edgeservice\\' \\'!=\\' \\'systemctl status rop_edgeservice\\' \\']\\'\\r\\n+ echo \\'STAGE: EXECUTE\\'\\r\\nSTAGE: EXECUTE\\r\\n+ echo \\'SENTINEL: WRAPPER_EXEC\\'\\r\\nSENTINEL: WRAPPER_EXEC\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ REASON=SUCCESS\\r\\n+ TIMEOUT_USED=false\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ echo RUNNING\\r\\nRUNNING\\r\\n+ \\'[\\' -n 30 \\']\\'\\r\\n+ command -v timeout\\r\\n+ TIMEOUT_USED=true\\r\\n+ debug \\'Executing with timeout 30s\\'\\r\\n+ \\'[\\' 0 = 1 \\']\\'\\r\\n+ true\\r\\n+ timeout --preserve-status 30 bash -c \\'systemctl status rop_edgeservice\\'\\r\\n+ RC=143\\r\\n+ RC=143\\r\\n+ \\'[\\' 143 = 124 \\']\\'\\r\\n+ \\'[\\' 143 -ne 0 \\']\\'\\r\\n+ \\'[\\' SUCCESS = SUCCESS \\']\\'\\r\\n+ REASON=EXEC_ERROR\\r\\n+ echo \\'RC: 143\\'\\r\\nRC: 143\\r\\n++ date +%s%3N\\r\\n+ EPOCH_END=1758327094019\\r\\n+ DURATION=30024\\r\\n+++ printf %s \\'systemctl status rop_edgeservice\\'\\r\\n+++ sed \\'s/"/\\\\\\\\"/g\\'\\r\\n+++ printf %s \\'systemctl status rop_edgeservice\\'\\r\\n+++ sed \\'s/"/\\\\\\\\"/g\\'\\r\\n+++ ts_iso\\r\\n+++ date -u +%Y-%m-%dT%H:%M:%SZ\\r\\n++ printf \\'{"original":%s,"repaired":%s,"changed":%s,"rc":%s,"duration_ms":%s,"repaired_devnull":%s,"timeout_used":%s,"dryrun":%s,"reason":%s,"timestamp_iso":%s}\\' \\'"systemctl status rop_edgeservice"\\' \\'"systemctl status rop_edgeservice"\\' false 143 30024 false true 0 \\'"EXEC_ERROR"\\' \\'"2025-09-20T00:11:34Z"\\'\\r\\n+ JSON_OBJ=\\'{"original":"systemctl status rop_edgeservice","repaired":"systemctl status rop_edgeservice","changed":false,"rc":143,"duration_ms":30024,"repaired_devnull":false,"timeout_used":true,"dryrun":0,"reason":"EXEC_ERROR","timestamp_iso":"2025-09-20T00:11:34Z"}\\'\\r\\n+ echo \\'JSON: {"original":"systemctl status rop_edgeservice","repaired":"systemctl status rop_edgeservice","changed":false,"rc":143,"duration_ms":30024,"repaired_devnull":false,"timeout_used":true,"dryrun":0,"reason":"EXEC_ERROR","timestamp_iso":"2025-09-20T00:11:34Z"}\\'\\r\\nJSON: {"original":"systemctl status rop_edgeservice","repaired":"systemctl status rop_edgeservice","changed":false,"rc":143,"duration_ms":30024,"repaired_devnull":false,"timeout_used":true,"dryrun":0,"reason":"EXEC_ERROR","timestamp_iso":"2025-09-20T00:11:34Z"}\\r\\n+ exit 143', 'stderr': 'Shared connection to m4s-d545-ifroes-01.intcx.net closed.'})
 
 TASK [deploy_service : Debug failed health checks (rc/stdout/stderr)] **********
-ok: [m4s-q35-cuws-01] => {
+ok: [m4s-d545-ifroes-01.intcx.net] => {
     "_failed_health_details": [
         {
-            "item": "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull",
-            "original_command": "ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull",
-            "rc": 1,
-            "stderr": "Shared connection to m4s-q35-cuws-01.adm.intcx.net closed.",
-            "stdout": "+ set -o pipefail\\r\\n+ set -u\\r\\n+ DN_A=/de\\r\\n+ DN_B=vu\\r\\n+ DN_C=ll\\r\\n+ DEVNULL=/devull\\r\\n++ date +%s%3N\\r\\n+ EPOCH_START=1758255223588\\r\\n+ echo 'STAGE: START'\\r\\nSTAGE: START\\r\\n+ echo 'SENTINEL: WRAPPER_BEGIN'\\r\\nSENTINEL: WRAPPER_BEGIN\\r\\n+ debug 'Wrapper start pid=3348857'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ debug 'Args count=1'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ debug 'Env: HC_DEBUG=0 HC_TIMEOUT=30 HC_DRYRUN=0'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ ENCODED_INPUT=cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==\\r\\n+ '[' -z cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA== ']'\\r\\n+ command -v base64\\r\\n++ printf %s cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==\\r\\n++ base64 -d\\r\\n+ CMD_ORIG='ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+ debug 'Decoded length=91'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ '[' -z 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull' ']'\\r\\n++ printf %s 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n++ sed -e 's|/devull|/devull|g' -e 's| devull| /devull|g' -e 's|devull|/devull|g'\\r\\n+ CMD_FIXED='ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+ debug 'Applied repair filters'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ DEFAULT_TIMEOUT=10\\r\\n+ DEFAULT_RETRY=1\\r\\n+ DEFAULT_RETRY_DELAY=1\\r\\n+ echo 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+ grep -q '{{timeout}}'\\r\\n+ echo 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+ grep -q '{{retry}}'\\r\\n+ echo 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+ grep -q '{{retryDelay}}'\\r\\n+ '[' '!' -c /devull ']'\\r\\n++ ls -l /devull\\r\\n+ debug '/devull status: crw-rw-rw- 1 root root 1, 3 Apr 17  2024 /devull'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ echo 'ORIGINAL: ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\nORIGINAL: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\r\\n+ REPAIRED_FLAG=false\\r\\n+ REPAIRED_DEVNULL=false\\r\\n+ '[' 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull' '!=' 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull' ']'\\r\\n+ echo 'STAGE: EXECUTE'\\r\\nSTAGE: EXECUTE\\r\\n+ echo 'SENTINEL: WRAPPER_EXEC'\\r\\nSENTINEL: WRAPPER_EXEC\\r\\n+ '[' 0 = 1 ']'\\r\\n+ REASON=SUCCESS\\r\\n+ TIMEOUT_USED=false\\r\\n+ '[' 0 = 1 ']'\\r\\n+ echo RUNNING\\r\\nRUNNING\\r\\n+ '[' -n 30 ']'\\r\\n+ command -v timeout\\r\\n+ TIMEOUT_USED=true\\r\\n+ debug 'Executing with timeout 30s'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ timeout --preserve-status 30 bash -c 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+ RC=1\\r\\n+ RC=1\\r\\n+ '[' 1 = 124 ']'\\r\\n+ '[' 1 -ne 0 ']'\\r\\n+ '[' SUCCESS = SUCCESS ']'\\r\\n+ REASON=EXEC_ERROR\\r\\n+ echo 'RC: 1'\\r\\nRC: 1\\r\\n++ date +%s%3N\\r\\n+ EPOCH_END=1758255223618\\r\\n+ DURATION=30\\r\\n+++ printf %s 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+++ sed 's/\\"/\\\\\\\\\\"/g'\\r\\n+++ printf %s 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\r\\n+++ sed 's/\\"/\\\\\\\\\\"/g'\\r\\n+++ ts_iso\\r\\n+++ date -u +%Y-%m-%dT%H:%M:%SZ\\r\\n++ printf '{\\"original\\":%s,\\"repaired\\":%s,\\"changed\\":%s,\\"rc\\":%s,\\"duration_ms\\":%s,\\"repaired_devnull\\":%s,\\"timeout_used\\":%s,\\"dryrun\\":%s,\\"reason\\":%s,\\"timestamp_iso\\":%s}' '\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\"' '\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\"' false 1 30 false true 0 '\\"EXEC_ERROR\\"' '\\"2025-09-19T04:13:43Z\\"'\\r\\n+ JSON_OBJ='{\\"original\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"repaired\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"changed\\":false,\\"rc\\":1,\\"duration_ms\\":30,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-19T04:13:43Z\\"}'\\r\\n+ echo 'JSON: {\\"original\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"repaired\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"changed\\":false,\\"rc\\":1,\\"duration_ms\\":30,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-19T04:13:43Z\\"}'\\r\\nJSON: {\\"original\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\",\\"repaired\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\",\\"changed\\":false,\\"rc\\":1,\\"duration_ms\\":30,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-19T04:13:43Z\\"}\\r\\n+ exit 1"
+            "item": "systemctl status rop_edgeservice",
+            "original_command": "systemctl status rop_edgeservice",
+            "rc": 143,
+            "stderr": "Shared connection to m4s-d545-ifroes-01.intcx.net closed.",
+            "stdout": "+ set -o pipefail\\r\\n+ set -u\\r\\n+ DN_A=/de\\r\\n+ DN_B=vu\\r\\n+ DN_C=ll\\r\\n+ DEVNULL=/devull\\r\\n++ date +%s%3N\\r\\n+ EPOCH_START=1758327063995\\r\\n+ echo 'STAGE: START'\\r\\nSTAGE: START\\r\\n+ echo 'SENTINEL: WRAPPER_BEGIN'\\r\\nSENTINEL: WRAPPER_BEGIN\\r\\n+ debug 'Wrapper start pid=685790'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ debug 'Args count=1'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ debug 'Env: HC_DEBUG=0 HC_TIMEOUT=30 HC_DRYRUN=0'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ ENCODED_INPUT=c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=\\r\\n+ '[' -z c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U= ']'\\r\\n+ command -v base64\\r\\n++ printf %s c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=\\r\\n++ base64 -d\\r\\n+ CMD_ORIG='systemctl status rop_edgeservice'\\r\\n+ debug 'Decoded length=32'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ '[' -z 'systemctl status rop_edgeservice' ']'\\r\\n++ printf %s 'systemctl status rop_edgeservice'\\r\\n++ sed -e 's|/devull|/devull|g' -e 's| devull| /devull|g' -e 's|devull|/devull|g'\\r\\n+ CMD_FIXED='systemctl status rop_edgeservice'\\r\\n+ debug 'Applied repair filters'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ DEFAULT_TIMEOUT=10\\r\\n+ DEFAULT_RETRY=1\\r\\n+ DEFAULT_RETRY_DELAY=1\\r\\n+ echo 'systemctl status rop_edgeservice'\\r\\n+ grep -q '{{timeout}}'\\r\\n+ echo 'systemctl status rop_edgeservice'\\r\\n+ grep -q '{{retry}}'\\r\\n+ echo 'systemctl status rop_edgeservice'\\r\\n+ grep -q '{{retryDelay}}'\\r\\n+ '[' '!' -c /devull ']'\\r\\n++ ls -l /devull\\r\\n+ debug '/devull status: crw-rw-rw- 1 root root 1, 3 Mar 21 13:50 /devull'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ echo 'ORIGINAL: systemctl status rop_edgeservice'\\r\\nORIGINAL: systemctl status rop_edgeservice\\r\\n+ REPAIRED_FLAG=false\\r\\n+ REPAIRED_DEVNULL=false\\r\\n+ '[' 'systemctl status rop_edgeservice' '!=' 'systemctl status rop_edgeservice' ']'\\r\\n+ echo 'STAGE: EXECUTE'\\r\\nSTAGE: EXECUTE\\r\\n+ echo 'SENTINEL: WRAPPER_EXEC'\\r\\nSENTINEL: WRAPPER_EXEC\\r\\n+ '[' 0 = 1 ']'\\r\\n+ REASON=SUCCESS\\r\\n+ TIMEOUT_USED=false\\r\\n+ '[' 0 = 1 ']'\\r\\n+ echo RUNNING\\r\\nRUNNING\\r\\n+ '[' -n 30 ']'\\r\\n+ command -v timeout\\r\\n+ TIMEOUT_USED=true\\r\\n+ debug 'Executing with timeout 30s'\\r\\n+ '[' 0 = 1 ']'\\r\\n+ true\\r\\n+ timeout --preserve-status 30 bash -c 'systemctl status rop_edgeservice'\\r\\n+ RC=143\\r\\n+ RC=143\\r\\n+ '[' 143 = 124 ']'\\r\\n+ '[' 143 -ne 0 ']'\\r\\n+ '[' SUCCESS = SUCCESS ']'\\r\\n+ REASON=EXEC_ERROR\\r\\n+ echo 'RC: 143'\\r\\nRC: 143\\r\\n++ date +%s%3N\\r\\n+ EPOCH_END=1758327094019\\r\\n+ DURATION=30024\\r\\n+++ printf %s 'systemctl status rop_edgeservice'\\r\\n+++ sed 's/\\"/\\\\\\\\\\"/g'\\r\\n+++ printf %s 'systemctl status rop_edgeservice'\\r\\n+++ sed 's/\\"/\\\\\\\\\\"/g'\\r\\n+++ ts_iso\\r\\n+++ date -u +%Y-%m-%dT%H:%M:%SZ\\r\\n++ printf '{\\"original\\":%s,\\"repaired\\":%s,\\"changed\\":%s,\\"rc\\":%s,\\"duration_ms\\":%s,\\"repaired_devnull\\":%s,\\"timeout_used\\":%s,\\"dryrun\\":%s,\\"reason\\":%s,\\"timestamp_iso\\":%s}' '\\"systemctl status rop_edgeservice\\"' '\\"systemctl status rop_edgeservice\\"' false 143 30024 false true 0 '\\"EXEC_ERROR\\"' '\\"2025-09-20T00:11:34Z\\"'\\r\\n+ JSON_OBJ='{\\"original\\":\\"systemctl status rop_edgeservice\\",\\"repaired\\":\\"systemctl status rop_edgeservice\\",\\"changed\\":false,\\"rc\\":143,\\"duration_ms\\":30024,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-20T00:11:34Z\\"}'\\r\\n+ echo 'JSON: {\\"original\\":\\"systemctl status rop_edgeservice\\",\\"repaired\\":\\"systemctl status rop_edgeservice\\",\\"changed\\":false,\\"rc\\":143,\\"duration_ms\\":30024,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-20T00:11:34Z\\"}'\\r\\nJSON: {\\"original\\":\\"systemctl status rop_edgeservice\\",\\"repaired\\":\\"systemctl status rop_edgeservice\\",\\"changed\\":false,\\"rc\\":143,\\"duration_ms\\":30024,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-20T00:11:34Z\\"}\\r\\n+ exit 143"
         }
     ]
 }
 
 TASK [deploy_service : Push health summary (Linux) - record failure before terminating] ***
-ok: [m4s-q35-cuws-01]
+ok: [m4s-d545-ifroes-01.intcx.net]
 
 TASK [deploy_service : Fail if any health checks failed] ***********************
-fatal: [m4s-q35-cuws-01]: FAILED! => {"changed": false, "msg": "HEALTH CHECK FAILURES on m4s-q35-cuws-01:\\n===================================================\\n\\n1 health check(s) failed:\\n\\nFAILED COMMAND 1:\\nTemplate: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\nRendered: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\nExit Code: 1\\nStandard Output:\\n+ set -o pipefail\\n  + set -u\\n  + DN_A=/de\\n  + DN_B=vu\\n  + DN_C=ll\\n  + DEVNULL=/devull\\n  ++ date +%s%3N\\n  + EPOCH_START=1758255223588\\n  + echo 'STAGE: START'\\n  STAGE: START\\n  + echo 'SENTINEL: WRAPPER_BEGIN'\\n  SENTINEL: WRAPPER_BEGIN\\n  + debug 'Wrapper start pid=3348857'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + debug 'Args count=1'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + debug 'Env: HC_DEBUG=0 HC_TIMEOUT=30 HC_DRYRUN=0'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + ENCODED_INPUT=cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==\\n  + '[' -z cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA== ']'\\n  + command -v base64\\n  ++ printf %s cHMgLWVmIHxncmVwIC1pIGFwYWNoZXwgZ3JlcCAtaSBwbW1hfGdyZXAgLXZFICdzcG9vbHxncmVwfGJhc2h8Y29sb3I9YXV0b3xtYWlsJyAmPi9kZXYvbnVsbA==\\n  ++ base64 -d\\n  + CMD_ORIG='ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  + debug 'Decoded length=91'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + '[' -z 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull' ']'\\n  ++ printf %s 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  ++ sed -e 's|/devull|/devull|g' -e 's| devull| /devull|g' -e 's|devull|/devull|g'\\n  + CMD_FIXED='ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  + debug 'Applied repair filters'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + DEFAULT_TIMEOUT=10\\n  + DEFAULT_RETRY=1\\n  + DEFAULT_RETRY_DELAY=1\\n  + echo 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  + grep -q '{{timeout}}'\\n  + echo 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  + grep -q '{{retry}}'\\n  + echo 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  + grep -q '{{retryDelay}}'\\n  + '[' '!' -c /devull ']'\\n  ++ ls -l /devull\\n  + debug '/devull status: crw-rw-rw- 1 root root 1, 3 Apr 17  2024 /devull'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + echo 'ORIGINAL: ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  ORIGINAL: ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\n  + REPAIRED_FLAG=false\\n  + REPAIRED_DEVNULL=false\\n  + '[' 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull' '!=' 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull' ']'\\n  + echo 'STAGE: EXECUTE'\\n  STAGE: EXECUTE\\n  + echo 'SENTINEL: WRAPPER_EXEC'\\n  SENTINEL: WRAPPER_EXEC\\n  + '[' 0 = 1 ']'\\n  + REASON=SUCCESS\\n  + TIMEOUT_USED=false\\n  + '[' 0 = 1 ']'\\n  + echo RUNNING\\n  RUNNING\\n  + '[' -n 30 ']'\\n  + command -v timeout\\n  + TIMEOUT_USED=true\\n  + debug 'Executing with timeout 30s'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + timeout --preserve-status 30 bash -c 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  + RC=1\\n  + RC=1\\n  + '[' 1 = 124 ']'\\n  + '[' 1 -ne 0 ']'\\n  + '[' SUCCESS = SUCCESS ']'\\n  + REASON=EXEC_ERROR\\n  + echo 'RC: 1'\\n  RC: 1\\n  ++ date +%s%3N\\n  + EPOCH_END=1758255223618\\n  + DURATION=30\\n  +++ printf %s 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  +++ sed 's/\\"/\\\\\\\\\\"/g'\\n  +++ printf %s 'ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull'\\n  +++ sed 's/\\"/\\\\\\\\\\"/g'\\n  +++ ts_iso\\n  +++ date -u +%Y-%m-%dT%H:%M:%SZ\\n  ++ printf '{\\"original\\":%s,\\"repaired\\":%s,\\"changed\\":%s,\\"rc\\":%s,\\"duration_ms\\":%s,\\"repaired_devnull\\":%s,\\"timeout_used\\":%s,\\"dryrun\\":%s,\\"reason\\":%s,\\"timestamp_iso\\":%s}' '\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\"' '\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\"' false 1 30 false true 0 '\\"EXEC_ERROR\\"' '\\"2025-09-19T04:13:43Z\\"'\\n  + JSON_OBJ='{\\"original\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"repaired\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"changed\\":false,\\"rc\\":1,\\"duration_ms\\":30,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-19T04:13:43Z\\"}'\\n  + echo 'JSON: {\\"original\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"repaired\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE '\\\\''spool|grep|bash|color=auto|mail'\\\\'' &>/devull\\",\\"changed\\":false,\\"rc\\":1,\\"duration_ms\\":30,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-19T04:13:43Z\\"}'\\n  JSON: {\\"original\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\",\\"repaired\\":\\"ps -ef |grep -i apache| grep -i pmma|grep -vE 'spool|grep|bash|color=auto|mail' &>/devull\\",\\"changed\\":false,\\"rc\\":1,\\"duration_ms\\":30,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-19T04:13:43Z\\"}\\n  + exit 1\\nStandard Error:\\nShared connection to m4s-q35-cuws-01.adm.intcx.net closed.\\n\\nCAUSE: Health checks indicate services are not running or responding properly.\\nThis will terminate the playbook per fail-fast orchestration requirements.\\n"}
+fatal: [m4s-d545-ifroes-01.intcx.net]: FAILED! => {"changed": false, "msg": "HEALTH CHECK FAILURES on m4s-d545-ifroes-01.intcx.net:\\n===================================================\\n\\n1 health check(s) failed:\\n\\nFAILED COMMAND 1:\\nTemplate: systemctl status rop_edgeservice\\nRendered: systemctl status rop_edgeservice\\nExit Code: 143\\nStandard Output:\\n+ set -o pipefail\\n  + set -u\\n  + DN_A=/de\\n  + DN_B=vu\\n  + DN_C=ll\\n  + DEVNULL=/devull\\n  ++ date +%s%3N\\n  + EPOCH_START=1758327063995\\n  + echo 'STAGE: START'\\n  STAGE: START\\n  + echo 'SENTINEL: WRAPPER_BEGIN'\\n  SENTINEL: WRAPPER_BEGIN\\n  + debug 'Wrapper start pid=685790'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + debug 'Args count=1'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + debug 'Env: HC_DEBUG=0 HC_TIMEOUT=30 HC_DRYRUN=0'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + ENCODED_INPUT=c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=\\n  + '[' -z c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U= ']'\\n  + command -v base64\\n  ++ printf %s c3lzdGVtY3RsIHN0YXR1cyByb3BfZWRnZXNlcnZpY2U=\\n  ++ base64 -d\\n  + CMD_ORIG='systemctl status rop_edgeservice'\\n  + debug 'Decoded length=32'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + '[' -z 'systemctl status rop_edgeservice' ']'\\n  ++ printf %s 'systemctl status rop_edgeservice'\\n  ++ sed -e 's|/devull|/devull|g' -e 's| devull| /devull|g' -e 's|devull|/devull|g'\\n  + CMD_FIXED='systemctl status rop_edgeservice'\\n  + debug 'Applied repair filters'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + DEFAULT_TIMEOUT=10\\n  + DEFAULT_RETRY=1\\n  + DEFAULT_RETRY_DELAY=1\\n  + echo 'systemctl status rop_edgeservice'\\n  + grep -q '{{timeout}}'\\n  + echo 'systemctl status rop_edgeservice'\\n  + grep -q '{{retry}}'\\n  + echo 'systemctl status rop_edgeservice'\\n  + grep -q '{{retryDelay}}'\\n  + '[' '!' -c /devull ']'\\n  ++ ls -l /devull\\n  + debug '/devull status: crw-rw-rw- 1 root root 1, 3 Mar 21 13:50 /devull'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + echo 'ORIGINAL: systemctl status rop_edgeservice'\\n  ORIGINAL: systemctl status rop_edgeservice\\n  + REPAIRED_FLAG=false\\n  + REPAIRED_DEVNULL=false\\n  + '[' 'systemctl status rop_edgeservice' '!=' 'systemctl status rop_edgeservice' ']'\\n  + echo 'STAGE: EXECUTE'\\n  STAGE: EXECUTE\\n  + echo 'SENTINEL: WRAPPER_EXEC'\\n  SENTINEL: WRAPPER_EXEC\\n  + '[' 0 = 1 ']'\\n  + REASON=SUCCESS\\n  + TIMEOUT_USED=false\\n  + '[' 0 = 1 ']'\\n  + echo RUNNING\\n  RUNNING\\n  + '[' -n 30 ']'\\n  + command -v timeout\\n  + TIMEOUT_USED=true\\n  + debug 'Executing with timeout 30s'\\n  + '[' 0 = 1 ']'\\n  + true\\n  + timeout --preserve-status 30 bash -c 'systemctl status rop_edgeservice'\\n  + RC=143\\n  + RC=143\\n  + '[' 143 = 124 ']'\\n  + '[' 143 -ne 0 ']'\\n  + '[' SUCCESS = SUCCESS ']'\\n  + REASON=EXEC_ERROR\\n  + echo 'RC: 143'\\n  RC: 143\\n  ++ date +%s%3N\\n  + EPOCH_END=1758327094019\\n  + DURATION=30024\\n  +++ printf %s 'systemctl status rop_edgeservice'\\n  +++ sed 's/\\"/\\\\\\\\\\"/g'\\n  +++ printf %s 'systemctl status rop_edgeservice'\\n  +++ sed 's/\\"/\\\\\\\\\\"/g'\\n  +++ ts_iso\\n  +++ date -u +%Y-%m-%dT%H:%M:%SZ\\n  ++ printf '{\\"original\\":%s,\\"repaired\\":%s,\\"changed\\":%s,\\"rc\\":%s,\\"duration_ms\\":%s,\\"repaired_devnull\\":%s,\\"timeout_used\\":%s,\\"dryrun\\":%s,\\"reason\\":%s,\\"timestamp_iso\\":%s}' '\\"systemctl status rop_edgeservice\\"' '\\"systemctl status rop_edgeservice\\"' false 143 30024 false true 0 '\\"EXEC_ERROR\\"' '\\"2025-09-20T00:11:34Z\\"'\\n  + JSON_OBJ='{\\"original\\":\\"systemctl status rop_edgeservice\\",\\"repaired\\":\\"systemctl status rop_edgeservice\\",\\"changed\\":false,\\"rc\\":143,\\"duration_ms\\":30024,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-20T00:11:34Z\\"}'\\n  + echo 'JSON: {\\"original\\":\\"systemctl status rop_edgeservice\\",\\"repaired\\":\\"systemctl status rop_edgeservice\\",\\"changed\\":false,\\"rc\\":143,\\"duration_ms\\":30024,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-20T00:11:34Z\\"}'\\n  JSON: {\\"original\\":\\"systemctl status rop_edgeservice\\",\\"repaired\\":\\"systemctl status rop_edgeservice\\",\\"changed\\":false,\\"rc\\":143,\\"duration_ms\\":30024,\\"repaired_devnull\\":false,\\"timeout_used\\":true,\\"dryrun\\":0,\\"reason\\":\\"EXEC_ERROR\\",\\"timestamp_iso\\":\\"2025-09-20T00:11:34Z\\"}\\n  + exit 143\\nStandard Error:\\nShared connection to m4s-d545-ifroes-01.intcx.net closed.\\n\\nCAUSE: Health checks indicate services are not running or responding properly.\\nThis will terminate the playbook per fail-fast orchestration requirements.\\n"}
 
 PLAY RECAP *********************************************************************
 localhost                  : ok=25   changed=1    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0   
-m4s-q35-cuws-01            : ok=71   changed=4    unreachable=0    failed=1    skipped=36   rescued=0    ignored=0   
+m4s-d545-ifroes-01.intcx.net : ok=77   changed=6    unreachable=0    failed=1    skipped=41   rescued=0    ignored=0   
