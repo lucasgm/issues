@@ -1,158 +1,497 @@
-#!/bin/bash
-set -x
-# Wrapper to execute a single health check command safely while repairing
-# any corruption of the /dev/null path (observed as /devull) introduced by
-# upstream templating / processing layers.
-#
-# Usage: health_check.sh <base64-encoded-command>
-# Optional environment variables:
-#   HC_DEBUG=1              Enable verbose debug tracing
-#   HC_TIMEOUT=<seconds>    Kill command if it exceeds timeout (uses timeout if available)
-#   HC_DRYRUN=1             Decode & repair only; do not execute
-# The script will:
-#   1. Decode the original command
-#   2. Repair occurrences of devull -> dev/null
-#   3. Ensure /dev/null exists and is a character device
-#   4. Execute the repaired command under bash -c
-#   5. Emit structured, easily grep/parseable log lines
-#
-# Output lines (markers + trailing JSON):
-#   STAGE: START
-#   ORIGINAL: <original>
-#   REPAIRED: <repaired>      (only if different)
-#   STAGE: EXECUTE
-#   RUNNING | DRYRUN
-#   RC: <exit_code>
-#   JSON: { structured result }
-#
-# JSON fields: original, repaired, changed(bool), rc, duration_ms, repaired_devnull(bool),
-# timeout_used(bool), dryrun(bool), reason(SUCCESS|DECODE_EMPTY|TIMEOUT|EXEC_ERROR), timestamp_iso
+# roles/deploy_service/tasks/host_install_batch.yml
 
-set -o pipefail
-set -u
+- name: Sanitize phase_services via JSON serialization
+  ansible.builtin.set_fact:
+    phase_services_clean: "{{ phase_services | to_json | from_json }}"
 
-# Build /dev/null path at runtime to avoid embedding the literal token
-# which has been observed to be corrupted in transit/logging.
-DN_A="/de"; DN_B="v/nu"; DN_C="ll"; DEVNULL="${DN_A}${DN_B}${DN_C}"
+# 1) Collect RPMs + hooks
+- name: Collect RPM paths and INSTALL hooks (Linux)
+  ansible.builtin.set_fact:
+    _rpm_paths_from_plan: >-
+      {{
+        phase_services_clean | map(attribute='containers') | sum(start=[])
+        | selectattr('type','defined') | selectattr('type','equalto','RPM')
+        | selectattr('__dest','defined')
+        | map(attribute='__dest') | list
+      }}
+    _install_before: >-
+      {{
+        phase_services_clean | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','INSTALL')
+        | selectattr('runStage','equalto','BEFORE')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+    _install_after: >-
+      {{
+        phase_services_clean | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','INSTALL')
+        | selectattr('runStage','equalto','AFTER')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
 
-debug() { [ "${HC_DEBUG:-0}" = "1" ] && echo "DEBUG: $*" >&2 || true; }
-ts_iso() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
-# Initialize epoch start with a portable fallback (seconds * 1000)
-EPOCH_START=$(date +%s%3N 2>"$DEVNULL" || echo $(( $(date +%s) * 1000 )))
-echo "STAGE: START"
-echo "SENTINEL: WRAPPER_BEGIN"
-debug "Wrapper start pid=$$"
-debug "Args count=$#"
-debug "Env: HC_DEBUG=${HC_DEBUG:-0} HC_TIMEOUT=${HC_TIMEOUT:-} HC_DRYRUN=${HC_DRYRUN:-0}"
+- name: Prefer RPM paths captured during DOWNLOAD (if any)
+  ansible.builtin.set_fact:
+    _rpm_paths: "{{ (downloaded_rpms | default([]) + _rpm_paths_from_plan) | unique }}"
+  when: _rpm_paths is not defined
 
-ENCODED_INPUT="${1:-}"
-if [ -z "$ENCODED_INPUT" ]; then
-  echo "ERROR: no base64 input provided" >&2
-  exit 99
-fi
+# 2) Repo flags
+- name: Set repo flags
+  ansible.builtin.set_fact:
+    _repo_flags: "{{ (yum_repo_flags | default('') | string) | trim }}"
 
-# Decode (tolerate newline stripping). base64 portability: use -d (GNU/BusyBox) or --decode.
-if command -v base64 >"$DEVNULL" 2>&1; then
-  CMD_ORIG=$(printf '%s' "$ENCODED_INPUT" | base64 -d 2>"$DEVNULL" || printf '%s' "$ENCODED_INPUT" | base64 --decode 2>"$DEVNULL" || true)
-else
-  echo "ERROR: base64 utility not found" >&2
-  exit 98
-fi
-debug "Decoded length=${#CMD_ORIG}"
+# 3) Derive package names / file NEVRs from the RPMs
+- name: Derive package NAMES from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_name
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
 
-if [ -z "$CMD_ORIG" ]; then
-  echo "ERROR: failed to decode base64 command" >&2
-  echo "RC: 97"
-  echo "JSON: {\"reason\":\"DECODE_EMPTY\",\"rc\":97,\"timestamp_iso\":\"$(ts_iso)\"}"
-  exit 97
-fi
+- name: Derive package NEVRs from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
 
-# Repair corruption variants (defensive ordering: longest / explicit path first)
-CMD_FIXED=$(printf '%s' "$CMD_ORIG" \
-  | sed -e "s|/devull|$DEVNULL|g" \
-        -e "s| devull| $DEVNULL|g" \
-        -e "s|devull|$DEVNULL|g")
-debug "Applied repair filters"
+- name: Collect unique package names and file NEVRs
+  ansible.builtin.set_fact:
+    _rpm_pkg_names: >-
+      {{
+        (_rpm_qp_name.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+    _rpm_file_nevrs: >-
+      {{
+        (_rpm_qp_nevr.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+  when: (_rpm_paths | length) > 0
 
-# Substitute unresolved templating placeholders (fallback defaults) if still present.
-# These placeholders should normally be rendered by Ansible/Jinja. If they reach here,
-# it indicates prior template rendering was bypassed. Provide safe numeric defaults.
-DEFAULT_TIMEOUT=${HC_FALLBACK_TIMEOUT:-10}
-DEFAULT_RETRY=${HC_FALLBACK_RETRY:-1}
-DEFAULT_RETRY_DELAY=${HC_FALLBACK_RETRY_DELAY:-1}
-if echo "$CMD_FIXED" | grep -q '{{timeout}}'; then
-  debug "Substituting fallback {{timeout}} -> $DEFAULT_TIMEOUT"
-  CMD_FIXED=${CMD_FIXED//'{{timeout}}'/$DEFAULT_TIMEOUT}
-fi
-if echo "$CMD_FIXED" | grep -q '{{retry}}'; then
-  debug "Substituting fallback {{retry}} -> $DEFAULT_RETRY"
-  CMD_FIXED=${CMD_FIXED//'{{retry}}'/$DEFAULT_RETRY}
-fi
-if echo "$CMD_FIXED" | grep -q '{{retryDelay}}'; then
-  debug "Substituting fallback {{retryDelay}} -> $DEFAULT_RETRY_DELAY"
-  CMD_FIXED=${CMD_FIXED//'{{retryDelay}}'/$DEFAULT_RETRY_DELAY}
-fi
+# 4) Find installed packages (names and NEVRs)
+- name: Check which package names are already installed
+  ansible.builtin.shell: "rpm -q --quiet {{ item }}"
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_pkg_names | default([]) }}"
+  register: _rpm_q
+  failed_when: false
+  changed_when: false
+  when: (_rpm_pkg_names | default([]) | length) > 0
 
-# Ensure /dev/null is present & correct
-if [ ! -c "$DEVNULL" ]; then
-  echo "WARN: /dev/null missing or not a char device; attempting restore" >&2
-  if [ -e "$DEVNULL" ]; then rm -f "$DEVNULL" || true; fi
-  mknod "$DEVNULL" c 1 3 2>"$DEVNULL" || true
-  chmod 666 "$DEVNULL" 2>"$DEVNULL" || true
-fi
-debug "/dev/null status: $(ls -l "$DEVNULL" 2>"$DEVNULL" || echo missing)"
+- name: Build list of installed package names
+  ansible.builtin.set_fact:
+    _rpm_installed_names: "{{ _rpm_q.results | selectattr('rc','equalto',0) | map(attribute='item') | list }}"
+  when: (_rpm_pkg_names | default([]) | length) > 0
 
-echo "ORIGINAL: $CMD_ORIG"
-REPAIRED_FLAG=false
-REPAIRED_DEVNULL=false
-if [ "$CMD_ORIG" != "$CMD_FIXED" ]; then
-  echo "REPAIRED: $CMD_FIXED"
-  REPAIRED_FLAG=true
-  if echo "$CMD_ORIG" | grep -q 'devull'; then REPAIRED_DEVNULL=true; fi
-fi
-echo "STAGE: EXECUTE"
-echo "SENTINEL: WRAPPER_EXEC"
-if [ "${HC_DRYRUN:-0}" = "1" ]; then
-  echo "DRYRUN"
-fi
+- name: Get installed NEVRs for those names
+  ansible.builtin.shell: "rpm -q {{ item }}"
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_installed_names | default([]) }}"
+  register: _rpm_q_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_installed_names | default([]) | length) > 0
 
-REASON="SUCCESS"
-TIMEOUT_USED=false
-if [ "${HC_DRYRUN:-0}" = "1" ]; then
-  RC=0
-else
-  echo "RUNNING"
-  # Disable systemd pager to avoid hanging 'systemctl status' in non-TTY contexts
-  export SYSTEMD_PAGER=""
-  export SYSTEMD_COLORS="0"
-  export SYSTEMD_LESS="FRXMK"
-  if [ -n "${HC_TIMEOUT:-}" ] && command -v timeout >"$DEVNULL" 2>&1; then
-    TIMEOUT_USED=true
-    debug "Executing with timeout ${HC_TIMEOUT}s"
-    timeout --preserve-status "${HC_TIMEOUT}" bash -c "$CMD_FIXED" || RC=$?
-    RC=${RC:-$?}
-    # On timeout, GNU timeout may return 124 (default) or 128+SIG if --preserve-status is used
-    if [ "$RC" = "124" ] || [ "$RC" = "137" ] || [ "$RC" = "143" ]; then REASON="TIMEOUT"; fi
-  else
-    debug "Executing without timeout"
-    bash -c "$CMD_FIXED" || RC=$?
-    RC=${RC:-$?}
-  fi
-fi
-if [ "$RC" -ne 0 ] && [ "$REASON" = "SUCCESS" ]; then REASON="EXEC_ERROR"; fi
-echo "RC: $RC"
-EPOCH_END=$(date +%s%3N 2>"$DEVNULL" || echo $(( $(date +%s) * 1000 )))
-DURATION=$((EPOCH_END - EPOCH_START))
-JSON_OBJ=$(printf '{"original":%s,"repaired":%s,"changed":%s,"rc":%s,"duration_ms":%s,"repaired_devnull":%s,"timeout_used":%s,"dryrun":%s,"reason":%s,"timestamp_iso":%s}' \
-  "\"$(printf '%s' "$CMD_ORIG" | sed 's/"/\\"/g')\"" \
-  "\"$(printf '%s' "$CMD_FIXED" | sed 's/"/\\"/g')\"" \
-  "$REPAIRED_FLAG" \
-  "$RC" \
-  "$DURATION" \
-  "$REPAIRED_DEVNULL" \
-  "$TIMEOUT_USED" \
-  "${HC_DRYRUN:-0}" \
-  "\"$REASON\"" \
-  "\"$(ts_iso)\"")
-echo "JSON: $JSON_OBJ"
-exit $RC
+- name: Collect installed NEVRs (unique)
+  ansible.builtin.set_fact:
+    _rpm_installed_nevrs: >-
+      {{
+        (_rpm_q_nevr.results | default([]))
+        | map(attribute='stdout_lines') | list | sum(start=[])
+        | map('trim') | reject('equalto','') | list | unique
+      }}
+  when: (_rpm_installed_names | default([]) | length) > 0
+
+# 5) Build command strings
+- name: Build rpm join lists
+  ansible.builtin.set_fact:
+    _rpm_joined: >-
+      {{ (_rpm_paths | default([])) | map('regex_replace','^','"') | map('regex_replace','$','"') | join(' ') }}
+
+- name: Choose removal candidates (NEVRs preferred, else names)
+  ansible.builtin.set_fact:
+    _remove_candidates: >-
+      {{ (_rpm_installed_nevrs | default([])) if ((_rpm_installed_nevrs | default([]) | length) > 0) else (_rpm_pkg_names | default([])) }}
+
+- name: Join removal candidate list (no quotes, no empties)
+  ansible.builtin.set_fact:
+    _remove_joined: "{{ (_remove_candidates | default([])) | map('trim') | reject('equalto','') | list | join(' ') }}"
+
+- name: Build remove + install/reinstall commands (yum only)
+  ansible.builtin.set_fact:
+    _remove_cmd: >-
+      {% if (_remove_joined | length) == 0 -%}
+      echo "No packages to remove on {{ inventory_hostname }}."
+      {%- else -%}
+      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined }} || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined }} || true
+      {%- endif %}
+    _yum_install_cmd: >-
+      /usr/bin/sudo yum -y {{ _repo_flags | default('') }} install {{ _rpm_joined | default('') }}
+    _yum_reinstall_cmd: >-
+      /usr/bin/sudo yum -y {{ _repo_flags | default('') }} reinstall {{ _rpm_joined | default('') }}
+
+# --- TEMP DEBUG: show exactly what we'll do (including proxy propagation) ----
+- name: "DEBUG (temp): planned remove/install commands + inputs"
+  ansible.builtin.debug:
+    msg: |
+      repo_flags: {{ _repo_flags }}
+      rpm_paths: {{ _rpm_paths | to_nice_json }}
+      rpm_file_nevrs: {{ _rpm_file_nevrs | default([]) | to_nice_json }}
+      rpm_pkg_names: {{ _rpm_pkg_names | default([]) | to_nice_json }}
+      rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
+      rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
+      remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}ices_clean: "{{ phase_services | to_json | from_json }}"
+
+# 1) Collect RPMs + hooks
+- name: Collect RPM paths and INSTALL hooks (Linux)
+  ansible.builtin.set_fact:
+    _rpm_paths_from_plan: >-
+      {{
+        phase_services_clean | map(attribute='containers') | sum(start=[])
+        | selectattr('type','defined') | selectattr('type','equalto','RPM')
+        | selectattr('__dest','defined')
+        | map(attribute='__dest') | list
+      }}
+    _install_before: >-
+      {{
+        phase_services_clean | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','INSTALL')
+        | selectattr('runStage','equalto','BEFORE')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+    _install_after: >-
+      {{
+        phase_services_clean | map(attribute='actionCommands') | sum(start=[])
+        | selectattr('action','equalto','INSTALL')
+        | selectattr('runStage','equalto','AFTER')
+        | map(attribute='command') | map('trim') | reject('equalto','') | list
+      }}
+
+- name: Prefer RPM paths captured during DOWNLOAD (if any)
+  ansible.builtin.set_fact:
+    _rpm_paths: "{{ (downloaded_rpms | default([]) + _rpm_paths_from_plan) | unique }}"
+  when: _rpm_paths is not defined
+
+# 2) Repo flags
+- name: Set repo flags
+  ansible.builtin.set_fact:
+    _repo_flags: "{{ (yum_repo_flags | default('') | string) | trim }}"
+
+# 3) Derive package names / file NEVRs from the RPMs
+- name: Derive package NAMES from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_name
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
+
+- name: Derive package NEVRs from RPM files
+  ansible.builtin.shell: 'rpm -qp --qf "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n" "{{ item }}"'
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_paths }}"
+  register: _rpm_qp_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_paths | length) > 0
+
+- name: Collect unique package names and file NEVRs
+  ansible.builtin.set_fact:
+    _rpm_pkg_names: >-
+      {{
+        (_rpm_qp_name.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+    _rpm_file_nevrs: >-
+      {{
+        (_rpm_qp_nevr.results | default([]))
+        | map(attribute='stdout') | map('trim') | reject('equalto','')
+        | list | unique
+      }}
+  when: (_rpm_paths | length) > 0
+
+# 4) Find installed packages (names and NEVRs)
+- name: Check which package names are already installed
+  ansible.builtin.shell: "rpm -q --quiet {{ item }}"
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_pkg_names | default([]) }}"
+  register: _rpm_q
+  failed_when: false
+  changed_when: false
+  when: (_rpm_pkg_names | default([]) | length) > 0
+
+- name: Build list of installed package names
+  ansible.builtin.set_fact:
+    _rpm_installed_names: "{{ _rpm_q.results | selectattr('rc','equalto',0) | map(attribute='item') | list }}"
+  when: (_rpm_pkg_names | default([]) | length) > 0
+
+- name: Get installed NEVRs for those names
+  ansible.builtin.shell: "rpm -q {{ item }}"
+  args: { executable: /bin/bash }
+  loop: "{{ _rpm_installed_names | default([]) }}"
+  register: _rpm_q_nevr
+  failed_when: false
+  changed_when: false
+  when: (_rpm_installed_names | default([]) | length) > 0
+
+- name: Collect installed NEVRs (unique)
+  ansible.builtin.set_fact:
+    _rpm_installed_nevrs: >-
+      {{
+        (_rpm_q_nevr.results | default([]))
+        | map(attribute='stdout_lines') | list | sum(start=[])
+        | map('trim') | reject('equalto','') | list | unique
+      }}
+  when: (_rpm_installed_names | default([]) | length) > 0
+
+# 5) Build command strings
+- name: Build rpm join lists
+  ansible.builtin.set_fact:
+    _rpm_joined: >-
+      {{ (_rpm_paths | default([])) | map('regex_replace','^','"') | map('regex_replace','$','"') | join(' ') }}
+
+- name: Choose removal candidates (NEVRs preferred, else names)
+  ansible.builtin.set_fact:
+    _remove_candidates: >-
+      {{ (_rpm_installed_nevrs | default([])) if ((_rpm_installed_nevrs | default([]) | length) > 0) else (_rpm_pkg_names | default([])) }}
+
+- name: Join removal candidate list (no quotes, no empties)
+  ansible.builtin.set_fact:
+    _remove_joined: "{{ (_remove_candidates | default([])) | map('trim') | reject('equalto','') | list | join(' ') }}"
+
+- name: Build remove + install/reinstall commands (yum only)
+  ansible.builtin.set_fact:
+    _remove_cmd: >-
+      {% if (_remove_joined | length) == 0 -%}
+      echo "No packages to remove on {{ inventory_hostname }}."
+      {%- else -%}
+      /usr/bin/sudo rpm -e --nodeps {{ _remove_joined }} || /usr/bin/sudo rpm -e --nodeps --noscripts {{ _remove_joined }} || true
+      {%- endif %}
+    _yum_install_cmd: >-
+      /usr/bin/sudo yum -y {{ _repo_flags | default('') }} install {{ _rpm_joined | default('') }}
+    _yum_reinstall_cmd: >-
+      /usr/bin/sudo yum -y {{ _repo_flags | default('') }} reinstall {{ _rpm_joined | default('') }}
+
+# --- TEMP DEBUG: show exactly what we’ll do (including proxy propagation) ----
+- name: "DEBUG (temp): planned remove/install commands + inputs"
+  ansible.builtin.debug:
+    msg: |
+      proxy_flag: {{ _proxy_flag }}
+      repo_flags: {{ _repo_flags }}
+      rpm_paths: {{ _rpm_paths | to_nice_json }}
+      rpm_file_nevrs: {{ _rpm_file_nevrs | default([]) | to_nice_json }}
+      rpm_pkg_names: {{ _rpm_pkg_names | default([]) | to_nice_json }}
+      rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
+      rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
+      remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
+      remove_joined: {{ _remove_joined }}
+      remove_cmd: {{ _remove_cmd }}
+      yum_install_cmd: {{ _yum_install_cmd }}
+      yum_reinstall_cmd: {{ _yum_reinstall_cmd }}
+  when: options.DEBUG | default(false)
+
+# ── CHECK MODE: only show what we would do ───────────────────────────────────
+- block:
+    - name: (check) BEFORE INSTALL hooks to run
+      ansible.builtin.debug: { var: _install_before }
+      when: _install_before | length > 0
+
+    - name: (check) Would run remove + yum install (with reinstall fallback)
+      ansible.builtin.debug:
+        msg: |
+          {{ _remove_cmd }} &&
+          if rpm -q --quiet {{ (_rpm_pkg_names | default([])) | join(' ') }}; then
+            echo "Packages still present -> would run: {{ _yum_reinstall_cmd }}";
+          else
+            echo "Packages removed -> would run: {{ _yum_install_cmd }}";
+          fi
+
+    - name: (check) AFTER INSTALL hooks to run
+      ansible.builtin.debug: { var: _install_after }
+      when: _install_after | length > 0
+
+    - name: Record simulated install summary (Linux, check mode)
+      ansible.builtin.set_stats:
+        aggregate: true
+        data:
+          install_summary:
+            host: "{{ inventory_hostname }}"
+            success_artifacts: []
+            failed_artifacts: []
+  when: ansible_check_mode | default(false)
+
+# ── REAL RUN ─────────────────────────────────────────────────────────────────
+- block:
+    - name: BEFORE INSTALL hooks
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _install_before }}"
+      register: _before_out
+      failed_when: false
+      changed_when: true
+      when: _install_before | length > 0
+
+    - name: Skip if no RPMs to install on this host
+      ansible.builtin.debug:
+        msg: "No RPMs to install on {{ inventory_hostname }}."
+      when: _rpm_paths | length == 0
+
+    # Visibility: state before removal
+    - name: "DEBUG before-remove: installed state for target names"
+      ansible.builtin.shell: |
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          echo "=== rpm -q $n ==="
+          rpm -q "$n" || true
+        done
+      args: { executable: /bin/bash }
+      register: _debug_before_remove
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: Remove currently-installed packages (NEVRs preferred, fallback to names)
+      ansible.builtin.shell: |
+        set -x
+        {{ _remove_cmd }}
+      args: { executable: /bin/bash }
+      register: _remove_run
+      when: (_remove_joined | length) > 0
+      changed_when: true
+      failed_when: false
+
+    - name: DEBUG remove result (rc/stdout/stderr)
+      ansible.builtin.debug:
+        msg: |
+          rc: {{ _remove_run.rc | default('n/a') }}
+          stdout:
+          {{ (_remove_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_remove_run.stderr | default('')) | indent(2) }}
+      when: _remove_run is defined
+
+    - name: Verify removals (non-fatal check)
+      ansible.builtin.shell: |
+        rc=0
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          if rpm -q --quiet "$n"; then
+            echo "$n still installed"
+            rc=1
+          fi
+        done
+        exit $rc
+      args: { executable: /bin/bash }
+      register: _remove_verify
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: DEBUG after-remove verification
+      ansible.builtin.debug:
+        msg: |
+          remove_verify_rc: {{ _remove_verify.rc | default('n/a') }}
+          remove_verify_stdout:
+          {{ (_remove_verify.stdout | default('')) | indent(2) }}
+          remove_verify_stderr:
+          {{ (_remove_verify.stderr | default('')) | indent(2) }}
+      when: _remove_verify is defined
+
+    # Decide path: install vs reinstall (if removal didn’t take)
+    - name: Decide install mode (install vs reinstall)
+      ansible.builtin.set_fact:
+        _do_reinstall: "{{ (_remove_verify.rc | default(0)) | int != 0 }}"
+      when: (_rpm_paths | length) > 0
+
+    - name: Run yum install (fresh, after successful removals)
+      ansible.builtin.shell: |
+        set -o pipefail
+        set -x
+        {{ _yum_install_cmd }}
+      args: 
+        executable: /bin/bash
+      environment: "{{ proxy_env | default({}) }}"
+      register: _yum_run
+      when: (_rpm_paths | length > 0) and (not _do_reinstall | default(false))
+      changed_when: >
+        (_rpm_paths | length > 0) and
+        ('Nothing to do' not in ((_yum_run.stdout | default('')) + (_yum_run.stderr | default(''))))
+
+    - name: Run yum reinstall (same-version fallback when removal didn't occur)
+      ansible.builtin.shell: |
+        set -o pipefail
+        set -x
+        {{ _yum_reinstall_cmd }}
+      args:
+        executable: /bin/bash
+      environment: "{{ proxy_env | default({}) }}"
+      register: _yum_run
+      when: (_rpm_paths | length > 0) and (_do_reinstall | default(false))
+      changed_when: true
+
+    - name: DEBUG install/reinstall result (rc/stdout/stderr)
+      ansible.builtin.debug:
+        msg: |
+          reinstall_mode: {{ _do_reinstall | default(false) }}
+          rc: {{ _yum_run.rc | default('n/a') }}
+          stdout:
+          {{ (_yum_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_yum_run.stderr | default('')) | indent(2) }}
+      when: _yum_run is defined
+
+    - name: Fail install if yum returned non-zero
+      ansible.builtin.fail:
+        msg: >-
+          Install failed for packages on {{ inventory_hostname }} (rc={{ _yum_run.rc | default('n/a') }}).
+          Command: {{ ( _do_reinstall | default(false) ) | ternary(_yum_reinstall_cmd, _yum_install_cmd) }}
+          stdout:
+          {{ (_yum_run.stdout | default('')) | indent(2) }}
+          stderr:
+          {{ (_yum_run.stderr | default('')) | indent(2) }}
+      when: (_rpm_paths | length > 0) and (_yum_run.rc | default(0)) != 0
+
+    # Final state after install
+    - name: "DEBUG after-install: installed state for target names"
+      ansible.builtin.shell: |
+        for n in {{ (_rpm_pkg_names | default([])) | join(' ') }}; do
+          echo "=== rpm -q $n ==="
+          rpm -q "$n" || true
+        done
+      args: { executable: /bin/bash }
+      register: _debug_after_install
+      when: (_rpm_pkg_names | default([]) | length) > 0
+      changed_when: false
+      failed_when: false
+
+    - name: Show after-install rpm query results
+      ansible.builtin.debug:
+        msg: |
+          rpm_q_summary (after-install):
+          {{ (_debug_after_install.stdout | default('')) | indent(2) }}
+      when: _debug_after_install is defined
+
+    - name: AFTER INSTALL hooks
+      ansible.builtin.shell: "{{ item }}"
+      args: { executable: /bin/bash }
+      loop: "{{ _install_after }}"
+      register: _after_out
+      failed_when: false
+      changed_when: true
+      when: _install_after | length > 0
+
+    - name: Record install summary (Linux)
+      ansible.builtin.set_stats:
+        aggregate: true
+        data:
+          install_summary:
+            host: "{{ inventory_hostname }}"
+            success_artifacts: "{{ (_rpm_paths | length > 0 and (_yum_run.rc | default(0)) == 0) | ternary(_rpm_paths, []) }}"
+            failed_artifacts:  "{{ (_rpm_paths | length > 0 and (_yum_run.rc | default(1)) != 0) | ternary(_rpm_paths, []) }}"
+  when: not (ansible_check_mode | default(false))
