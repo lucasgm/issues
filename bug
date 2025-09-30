@@ -4,6 +4,17 @@
   ansible.builtin.set_fact:
     phase_services_clean: "{{ phase_services | to_json | from_json }}"
 
+- name: DEBUG show proxy settings passed to this host
+  ansible.builtin.debug:
+    msg: |
+      options.PROXY: {{ options.PROXY | default('') }}
+      host_proxy_env: {{ proxy_env | default({}) | to_nice_json }}
+      http_proxy (host): {{ proxy_env.http_proxy if proxy_env is defined else '' }}
+      https_proxy (host): {{ proxy_env.https_proxy if proxy_env is defined else '' }}
+      effective_env_http_proxy: {{ lookup('env','http_proxy') | default('') }}
+      effective_env_https_proxy: {{ lookup('env','https_proxy') | default('') }}
+  when: options.DEBUG | default(false)
+
 # 1) Collect RPMs + hooks
 - name: Collect RPM paths and INSTALL hooks (Linux)
   ansible.builtin.set_fact:
@@ -38,6 +49,15 @@
 - name: Set repo flags
   ansible.builtin.set_fact:
     _repo_flags: "{{ (yum_repo_flags | default('') | string) | trim }}"
+
+- name: Set legacy yum proxy flag (for debug/legacy CLI use)
+  ansible.builtin.set_fact:
+    _proxy_flag: >-
+      {%- if (options.PROXY | default('') | trim) != '' -%}
+      --setopt=proxy={{ (options.PROXY | regex_replace('^(http|https)://', '') | trim) }}
+      {%- else -%}
+      ''
+      {%- endif %}
 
 # 3) Derive package names / file NEVRs from the RPMs
 - name: Derive package NAMES from RPM files
@@ -140,13 +160,19 @@
 - name: "DEBUG (temp): planned remove/install commands + inputs"
   ansible.builtin.debug:
     msg: |
-      repo_flags: {{ _repo_flags }}
-      rpm_paths: {{ _rpm_paths | to_nice_json }}
+      proxy_flag: {{ _proxy_flag | default('') }}
+      repo_flags: {{ _repo_flags | default('') }}
+      rpm_paths: {{ _rpm_paths | default([]) | to_nice_json }}
       rpm_file_nevrs: {{ _rpm_file_nevrs | default([]) | to_nice_json }}
       rpm_pkg_names: {{ _rpm_pkg_names | default([]) | to_nice_json }}
       rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
       rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
-      remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}ices_clean: "{{ phase_services | to_json | from_json }}"
+      remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
+      remove_joined: {{ _remove_joined | default('') }}
+      remove_cmd: {{ _remove_cmd | default('') }}
+      yum_install_cmd: {{ _yum_install_cmd | default('') }}
+      yum_reinstall_cmd: {{ _yum_reinstall_cmd | default('') }}
+  when: options.DEBUG | default(false)
 
 # 1) Collect RPMs + hooks
 - name: Collect RPM paths and INSTALL hooks (Linux)
@@ -284,18 +310,18 @@
 - name: "DEBUG (temp): planned remove/install commands + inputs"
   ansible.builtin.debug:
     msg: |
-      proxy_flag: {{ _proxy_flag }}
-      repo_flags: {{ _repo_flags }}
-      rpm_paths: {{ _rpm_paths | to_nice_json }}
+      proxy_flag: {{ _proxy_flag | default('') }}
+      repo_flags: {{ _repo_flags | default('') }}
+      rpm_paths: {{ _rpm_paths | default([]) | to_nice_json }}
       rpm_file_nevrs: {{ _rpm_file_nevrs | default([]) | to_nice_json }}
       rpm_pkg_names: {{ _rpm_pkg_names | default([]) | to_nice_json }}
       rpm_installed_names: {{ _rpm_installed_names | default([]) | to_nice_json }}
       rpm_installed_nevrs: {{ _rpm_installed_nevrs | default([]) | to_nice_json }}
       remove_candidates: {{ _remove_candidates | default([]) | to_nice_json }}
-      remove_joined: {{ _remove_joined }}
-      remove_cmd: {{ _remove_cmd }}
-      yum_install_cmd: {{ _yum_install_cmd }}
-      yum_reinstall_cmd: {{ _yum_reinstall_cmd }}
+      remove_joined: {{ _remove_joined | default('') }}
+      remove_cmd: {{ _remove_cmd | default('') }}
+      yum_install_cmd: {{ _yum_install_cmd | default('') }}
+      yum_reinstall_cmd: {{ _yum_reinstall_cmd | default('') }}
   when: options.DEBUG | default(false)
 
 # ── CHECK MODE: only show what we would do ───────────────────────────────────
