@@ -1,129 +1,115 @@
----
-# roles/deploy_service/tasks/start_health_linux.yml
-# Assumes "service" var is the current service object for this host (as in your include).
-# Assumes "svc_obj" is passed by the include.
+Chillo Deployments Using Ansible
+Overview
 
-# 1) Capture the service object you passed from the role include
-- name: Capture service object (Linux)
-  ansible.builtin.set_fact:
-    _svc_obj: "{{ svc_obj | default({}, true) }}"
-  no_log: true
-  changed_when: false
+The current deployment process for Chillo relies on a mix of automation tools—custom scripts, Java applications, and other ad-hoc solutions—developed independently by various teams.
+To standardize and modernize deployment automation across the organization, we are aligning with the company-wide initiative to adopt Red Hat Ansible.
+Ansible provides a unified platform capable of handling multiple automation needs, including artifact orchestration and deployment across distributed environments.
 
-# 2) Extract the serviceCommands list
-- name: Extract serviceCommands
-  ansible.builtin.set_fact:
-    _svc_cmds: "{{ (_svc_obj.containers | default([])) | map(attribute='serviceCommands') | list }}"
-  changed_when: false
+Impact on Chillo
 
-# 3) Build command lists
-- name: Build linux start/stop/health command lists
-  ansible.builtin.set_fact:
-    _linux_stop_cmds:       "{{ _svc_cmds | selectattr('stop', 'defined')       | map(attribute='stop')       | map('trim') | reject('equalto','') | list }}"
-    _linux_start_cmds:      "{{ _svc_cmds | selectattr('start','defined')       | map(attribute='start')      | map('trim') | reject('equalto','') | list }}"
-    _linux_health_cmds:     "{{ _svc_cmds | selectattr('health','defined')      | map(attribute='health')     | map('trim') | reject('equalto','') | list }}"
-    _linux_stophealth_cmds: "{{ _svc_cmds | selectattr('stopHealth','defined')  | map(attribute='stopHealth') | map('trim') | reject('equalto','') | list }}"
-  changed_when: false
+We are not modifying any existing Chillo repositories, application code, or business logic.
+The only change is replacing the current deployment mechanism with Ansible, which will serve as the underlying orchestration tool.
 
-# - name: 🛑 Stop services (best effort, skip if none)
-#   ansible.builtin.shell: "{{ item }}"
-#   args: { executable: /bin/bash }
-#   loop: "{{ _linux_stop_cmds }}"
-#   loop_control: { label: "{{ item }}" }
-#   register: _stop_out
-#   ignore_errors: true
-#   changed_when: true
-#   when: _linux_stop_cmds | length > 0
+Automation Approach
 
-# - name: Verify stopped (optional) — stopHealth
-#   ansible.builtin.shell: "{{ item }}"
-#   args: { executable: /bin/bash }
-#   loop: "{{ _linux_stophealth_cmds }}"
-#   loop_control: { label: "{{ item }}" }
-#   register: _stophealth_out
-#   ignore_errors: true
-#   changed_when: false
-#   when: _linux_stophealth_cmds | length > 0
+Deployment automation will be initiated through GitHub Actions, offering an interface similar to what end users currently experience in Jenkins.
 
-# Collect start results but DON'T fail yet; evaluate after summary.
-- name: ▶️ Start services (skip if none; collect results)
-  ansible.builtin.shell: "{{ item }}"
-  args: { executable: /bin/bash }
-  loop: "{{ _linux_start_cmds }}"
-  loop_control: { label: "{{ item }}" }
-  register: _start_out
-  changed_when: true
-  failed_when: false
-  when: _linux_start_cmds | length > 0
+Implementation Plan
+1. GitHub Workflow Inputs
 
-# Health once (no retry)
-- name: ❤️ Health check (once, no retry)
-  ansible.builtin.shell: "{{ item }}"
-  args: { executable: /bin/bash }
-  loop: "{{ _linux_health_cmds }}"
-  loop_control:
-    label: "{{ (item | regex_replace('\\s+', ' '))[:80] ~ ('…' if (item|length) > 80 else '') }}"
-  register: _health_out
-  changed_when: false
-  failed_when: false
-  when: _linux_health_cmds | length > 0
+We will create a manual GitHub workflow trigger (workflow_dispatch) that allows users to provide parameters such as:
 
-# Summarise + fail-fast
-- name: Classify start/health results
-  ansible.builtin.set_fact:
-    _start_fail_cmds: >-
-      {{
-        (_start_out.results | default([]))
-        | selectattr('rc','defined')
-        | rejectattr('rc','eq',0)
-        | map(attribute='item') | list
-      }}
-    _start_ok_cmds: >-
-      {{
-        (_start_out.results | default([]))
-        | selectattr('rc','defined')
-        | selectattr('rc','eq',0)
-        | map(attribute='item') | list
-      }}
-    _health_fail_cmds: >-
-      {{
-        (_health_out.results | default([]))
-        | selectattr('rc','defined')
-        | rejectattr('rc','eq',0)
-        | map(attribute='item') | list
-      }}
-    _health_ok_cmds: >-
-      {{
-        (_health_out.results | default([]))
-        | selectattr('rc','defined')
-        | selectattr('rc','eq',0)
-        | map(attribute='item') | list
-      }}
+TAG
 
-- name: Push per-host start/health summary (Linux)
-  ansible.builtin.set_stats:
-    data:
-      start_health_summary: >-
-        {{ (hostvars[inventory_hostname].start_health_summary | default([])) + [ {
-          'service'        : _svc_obj.name | default('unknown'),
-          'stop_cmds'      : _linux_stop_cmds,
-          'start_cmds'     : _linux_start_cmds,
-          'health_cmds'    : _linux_health_cmds,
-          'start_ok'       : _start_ok_cmds,
-          'start_fail'     : _start_fail_cmds,
-          'health_ok'      : _health_ok_cmds,
-          'health_fail'    : _health_fail_cmds
-        } ] }}
-  changed_when: false
+Branch
 
-- name: Abort now if any start/health failures (Linux)
-  ansible.builtin.fail:
-    msg: >-
-      {{ _svc_obj.name | default('unknown') }} failed:
-      start={{ _start_fail_cmds | length }}; health={{ _health_fail_cmds | length }}.
-      Start failed: {{ _start_fail_cmds | join(' | ') }}
-      Health failed: {{ _health_fail_cmds | join(' | ') }}
-  when: >
-    (_start_fail_cmds | default([]) | length) > 0
-    or
-    (_health_fail_cmds | default([]) | length) > 0
+Environment
+
+Actions
+
+Component Filter
+
+Server Tag Filter
+
+Additional parameters may be added in future iterations as needed.
+
+2. Execution Plan Generation
+
+The workflow will launch a Docker image containing the Chillo CLI, which will:
+
+Generate the execution-plan.json, identical to the plan produced by Jenkins today.
+
+Create the servers.yml, listing all servers for the selected environment along with their associated tags.
+
+3. YAML Conversion for Ansible
+
+A lightweight executable will process the generated files (execution-plan.json and servers.yml) and convert them into a concise execution-plan.yml format suitable for Ansible orchestration.
+
+While the JSON version can span thousands of lines, the YAML version is optimized for readability and execution while retaining all necessary deployment details.
+
+Example (excerpt):
+
+- name: sdp-canola-config
+  type: SERVICE
+  dependsOn:
+    - componentName: iceamazoncorretto.17.0.3.6.1
+      reverseDependency: false
+      currentAction: INSTALL
+      dependsOnAction: INSTALL
+      orchestrationOnly: true
+  containers:
+    - type: RPM
+      groupId: com.theice.clearing.deliveries
+      artifactId: ICEdel-config-server-rpm
+      version: 1.10.3.2.0-SNAPSHOT
+      rpmName: ICEdel-config-server-rpm
+      serviceCommands:
+        start: /usr/bin/sudo /var/opt/delcs/scripts/startStop.sh start icus
+        stop: /usr/bin/sudo /var/opt/delcs/scripts/startStop.sh stop
+        health: ps -ef | grep -i delcs | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null && \
+          curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} \
+          --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15020/actuator/health | grep UP
+        stopHealth: '! ps -ef | grep -i delcs | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
+  serverFilters:
+    - m4s-i1-cudlas-01
+    - m4s-i1-cudlas-02
+  actionServerFilters:
+    INSTALL: [m4s-i1-cudlas-01]
+    START: [m4s-i1-cudlas-01]
+    STOP: [m4s-i1-cudlas-01]
+    HEALTH_CHECK: [m4s-i1-cudlas-01]
+  lifecycle:
+    - DOWNLOAD
+    - START
+    - HEALTH_CHECK
+
+4. Deployment via Red Hat Ansible API
+
+The generated execution-plan.yml will be passed to Ansible as an environment variable named EXECPLAN.
+Ansible will then orchestrate the full deployment workflow across the specified environment and target servers.
+
+5. Status Monitoring and Reporting
+
+Once Ansible completes execution:
+
+The system will check the job’s status (Success/Failure).
+
+On success, the workflow ends cleanly.
+
+On failure, detailed error information will be displayed, including:
+
+The failing step(s)
+
+Root cause summary
+
+A URL link to detailed Ansible logs for further analysis
+
+Key Benefits
+
+Standardization: Aligns Chillo deployments with the organization’s Ansible-based automation strategy.
+
+Scalability: Enables orchestrated deployments across multiple environments and servers.
+
+Visibility: Provides structured reporting and centralized logging for easier troubleshooting.
+
+Reusability: Leverages GitHub Actions and Docker for consistent and repeatable automation.
