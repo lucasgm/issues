@@ -7,8 +7,10 @@ Ansible offers a unified, scalable framework that supports a wide range of autom
 
 Impact on Chillo
 
-We are not modifying any existing Chillo repositories, application code, or business logic.
-The only change is replacing the current deployment mechanism with Ansible, which will serve as the underlying orchestration tool.
+No changes will be made to existing Chillo repositories, application code, or business logic.
+The only modification involves replacing the current deployment mechanism with Red Hat Ansible, which will act as the underlying orchestration engine.
+This integration leverages Chillo’s existing output files — execution-plan.json and servers.yml — generated during a dry run. These files provide comprehensive 
+details about the deployment scope, including the artifacts and services to be updated, as well as the specific servers impacted by each action.
 
 Automation Approach
 
