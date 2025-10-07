@@ -1,9 +1,9 @@
 Chillo Deployments Using Ansible
 Overview
 
-The current deployment process for Chillo relies on a mix of automation tools—custom scripts, Java applications, and other ad-hoc solutions—developed independently by various teams.
-To standardize and modernize deployment automation across the organization, we are aligning with the company-wide initiative to adopt Red Hat Ansible.
-Ansible provides a unified platform capable of handling multiple automation needs, including artifact orchestration and deployment across distributed environments.
+Several teams within the organization have implemented artifact deployment automation using a variety of independent solutions, such as custom scripts, Java applications, and other ad hoc tools.
+To streamline and modernize these efforts, we are aligning with the company-wide initiative to adopt Red Hat Ansible as the standard automation platform.
+Ansible offers a unified, scalable framework that supports a wide range of automation needs—including artifact orchestration and deployments across distributed environments.
 
 Impact on Chillo
 
