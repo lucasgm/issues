@@ -157,11 +157,6 @@
       reverseDependency: false
       currentAction: START
       dependsOnAction: START
-    - componentName: sdp-canola-config
-      serverFilter: m4s-i1-cudlas-02
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
   actionCommands: []
   containers:
     - type: RPM
@@ -206,11 +201,6 @@
       reverseDependency: false
       currentAction: START
       dependsOnAction: START
-    - componentName: sdp-canola-config
-      serverFilter: m4s-i1-cudlas-02
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
   actionCommands: []
   containers:
     - type: RPM
@@ -252,11 +242,6 @@
       orchestrationOnly: true
     - componentName: sdp-canola-config
       serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-    - componentName: sdp-canola-config
-      serverFilter: m4s-i1-cudlas-02
       reverseDependency: false
       currentAction: START
       dependsOnAction: START
@@ -314,9 +299,13 @@
     HEALTH_CHECK:
         - m4s-i1-cudlas-01
         - m4s-i1-cudlas-02
+        - m4s-i1-cudldb-01
+        - m4s-i1-cuws-01
     START:
         - m4s-i1-cudlas-01
         - m4s-i1-cudlas-02
+        - m4s-i1-cudldb-01
+        - m4s-i1-cuws-01
   lifecycle:
     - DOWNLOAD
     - START
@@ -394,9 +383,15 @@
     - m4s-i1-cudlas-02
   actionServerFilters:
     HEALTH_CHECK:
+        - m4s-i1-cudlas-01
         - m4s-i1-cudlas-02
+        - m4s-i1-cudldb-01
+        - m4s-i1-cuws-01
     START:
+        - m4s-i1-cudlas-01
         - m4s-i1-cudlas-02
+        - m4s-i1-cudldb-01
+        - m4s-i1-cuws-01
   lifecycle:
     - DOWNLOAD
 - name: sdp-file-integration
@@ -414,11 +409,6 @@
       orchestrationOnly: true
     - componentName: sdp-config
       serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-    - componentName: sdp-config
-      serverFilter: m4s-i1-cudlas-02
       reverseDependency: false
       currentAction: START
       dependsOnAction: START
@@ -474,11 +464,6 @@
       orchestrationOnly: true
     - componentName: sdp-config
       serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-    - componentName: sdp-config
-      serverFilter: m4s-i1-cudlas-02
       reverseDependency: false
       currentAction: START
       dependsOnAction: START
