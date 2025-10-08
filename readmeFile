@@ -1,0 +1,1139 @@
+# ExecPlan‑Driven Deployment Playbook
+
+This repository contains an Ansible playbook that deploys services defined in a single YAML "execution plan" (execplan). It dynamically derives the host list, maps components to lifecycle phases, orchestrates dependency‑aware starts and health checks, and records a concise deployment summary.
+
+## What It Does
+- Reads `execplan.yml` and builds per‑host phase queues for `STOP`, `UNINSTALL`, `DOWNLOAD`, `INSTALL`, `START`, `HEALTH_CHECK`.
+- Derives dependency levels to gate `START` and `HEALTH_CHECK` execution.
+- Downloads artifacts from Artifactory (Linux/Windows) and caches resolved GAVC URLs on localhost.
+- Installs Linux RPMs in batch on each host (handles remove vs reinstall). Installs Windows packages via Chocolatey or ZIP.
+- Runs service start/stop/health shell/PowerShell commands from the plan.
+- Provides a post‑deploy step (SE Tools wrapper + cleanup of downloaded artifacts).
+- Supports Ansible check mode to preview actions without changing hosts.
+
+## Key Files
+- `playbook.yml`: Orchestration entrypoint (all plays/phases).
+- `execplan.yml`: Input plan that describes components, hosts, dependencies, containers, commands, and lifecycle.
+- `roles/deploy_service/*`: Implementation for download/install/start/stop/health and helpers.
+- `vars/vars.yml`: Global options (proxy, repo flags, toggles) consumed by the playbook.
+
+## Enhancements (action scoping and health hooks)
+- dependsOn.serverFilter scoping
+  - Now honored when present as either a single string or a list.
+  - Dependency injections are applied only when `orchestrationOnly` is absent or `false`; entries with `orchestrationOnly: true` are ignored for scheduling (used purely for ordering).
+  - Host scoping intersects the `dependsOn.serverFilter` (if provided) with the dependency component’s `serverFilters` and, when present, the dependency’s `actionServerFilters[dependsOnAction]`.
+
+- actionServerFilters per action
+  - When a component defines `actionServerFilters`, the scheduler restricts that action to the specified hosts only.
+  - If an action key is missing or maps to an empty list, no restriction is applied for that action.
+  - This enforcement applies both to normal phase scheduling and to dependency‑driven injections (the dependency’s filters are applied to its `dependsOnAction`).
+
+- HEALTH_CHECK actionCommands hooks (Linux)
+  - `roles/deploy_service/tasks/health_only_linux.yml` now executes `actionCommands` where `action: HEALTH_CHECK` with `runStage: BEFORE` before container health commands, and those with `runStage: AFTER` afterwards.
+  - Windows health tasks are unchanged.
+
+## ExecPlan Fields (used by the playbook)
+Minimum per component:
+- `name`: Unique component name (string).
+- `type`: Typically `SERVICE`.
+- `serverFilters`: List of hostnames for this component.
+- `lifecycle`: Subset of `STOP`, `DOWNLOAD`, `INSTALL`, `START`, `HEALTH_CHECK`.
+- `containers[]`: Items with at least `type`, `groupId`, `artifactId` (or `name`), and `version`.
+  - Linux RPMs: `type: RPM` and optional `serviceCommands` with `start`, `stop`, `stopHealth`, `health`.
+  - Windows: `type: CHOCO` or `type: ZIP` (ZIP also supports `installLocation` and optional `postUnZipCmd`).
+- Optional `actionCommands[]`: Extra commands with `action` in `INSTALL|START`, and `runStage` `BEFORE|AFTER`.
+- Optional `dependsOn`: Either simple names or objects with `componentName`, `currentAction`, `dependsOnAction`.
+
+Notes on special fields:
+- `orchestrationOnly`: When omitted or set to `false` on a `dependsOn` entry, the playbook now injects the referenced `dependsOnAction` into the dependency’s phase map on overlapping hosts (e.g., `INSTALL` injects both `DOWNLOAD` and `INSTALL`; `HEALTH_CHECK` injects `START` and `HEALTH_CHECK`). When `true`, it is treated as ordering/gating only and does not schedule extra actions.
+- `reverseDependency`: currently not evaluated.
+
+## Lifecycle And Phase Mapping
+Source: `playbook.yml` (Play 1 → “Build per‑host phase map”).
+- For each component+host, queues the component into the phase lists present in `lifecycle`.
+- Special case: if `DOWNLOAD` is present (or `INSTALL` is explicitly present), the component is also placed into `INSTALL`. That is, `DOWNLOAD` implies an ensuing `INSTALL` phase even when `INSTALL` is not listed.
+- If a phase is not in `lifecycle` (e.g., `STOP`), it is not queued for that component/host.
+
+## Dependency Handling (START/HEALTH only)
+- The playbook computes a dependency map and levels per component name.
+- Action‑aware mode: when `dependsOn` entries include `currentAction` and `dependsOnAction`, only edges where `currentAction == 'START'` and `dependsOnAction in ['HEALTH_CHECK','START']` are considered.
+- Fallback mode: if no action‑specific fields exist, it treats `dependsOn` as a flat list of component names.
+- Levels are computed topologically; `START` and `HEALTH_CHECK` run level‑by‑level for non‑root components, while roots (no deps) may be started/checked earlier in parallel.
+- INSTALL does not use dependency levels; see “Execution Flow” for details.
+
+## Execution Flow (high‑level)
+1) Ingest plan and prepare context (localhost)
+- Reads `execplan.yml` into `components` and derives component name lists, no‑dependency roots, and the dependency map/levels.
+- Composes repo flags from `vars/vars.yml` (`ENABLEREPO`, `DISABLEREPO`).
+- Builds a localhost cache of Artifactory GAVC URLs for all known GAVC coordinates found in containers.
+- Adds dynamic hosts from `serverFilters` with host‑scoped vars (phase map, levels, timeouts, repo flags, options, artifactory creds).
+
+2) STOP (optional)
+- Runs for components that include `STOP` in their lifecycle.
+- Executes Linux shell or Windows PowerShell commands from `containers[].serviceCommands.stop` and `stopHealth`.
+
+3) UNINSTALL (optional)
+- For components queued in `UNINSTALL` (including injected dependencies), removes packages:
+  - Linux: `rpm -e --nodeps` (with verification) via `roles/deploy_service/tasks/host_uninstall_batch.yml`.
+  - Windows: Chocolatey uninstall for CHOCO, directory removal for ZIP via `roles/deploy_service/tasks/host_uninstall_batch_windows.yml`.
+ - If a container defines `serviceCommands.stop`, the playbook stops the service before uninstall; if `stopHealth` is defined, it is run to verify the stop. If no `stop` is defined, uninstall proceeds without a stop.
+
+4) DOWNLOAD
+- For each component queued in `DOWNLOAD`, downloads each container artifact (Linux async with `get_url`; Windows with `win_get_url`).
+- Waits for all async download jobs for the component, then records Linux RPM file paths to `downloaded_rpms` for later batch install.
+
+5) INSTALL
+- Parallel “root” installs (components with no deps) per host:
+  - Linux: `roles/deploy_service/tasks/host_install_batch.yml` removes current packages (NEVRs if possible) and runs `yum install` (or `yum reinstall` fallback) with proxy and repo flags.
+  - Windows: `roles/deploy_service/tasks/host_install_batch_windows.yml` installs `CHOCO` packages and unzips `ZIP` artifacts.
+- Gate: a localhost check fails fast if any root INSTALL/START/HEALTH failures occurred, before proceeding.
+- Sequential “remainder” installs per host (component order), regardless of dependency levels.
+
+6) START + HEALTH_CHECK (gated by levels)
+- Starts then health‑checks services level‑by‑level (non‑roots), using commands from `containers[].serviceCommands.start` and `health`.
+
+7) POST_DEPLOY
+- Runs SE Tools wrapper on Linux (if sudo allows) and cleans up per‑host downloaded artifacts.
+
+8) Aggregate results
+- Collates and prints install/start/health summaries and fails the run if any failures were recorded.
+
+## Artifactory And Credentials
+- GAVC search and caching (localhost): Uses `artifactory_token` if provided, else `$ARTIFACTORY_TOKEN`, else `artifactory_password`. Base URL defaults to `https://artifactory.intcx.net/artifactory` and can be overridden with `artifactory_url`.
+- Downloads: The per‑container download task first tries the localhost cache; if missing, it queries Artifactory. A Bearer token is used. On some paths, a role passes `artifactory_password` directly — set either `artifactory_token`/`ARTIFACTORY_TOKEN` or `artifactory_password` to authenticate.
+
+## Options (from `vars/vars.yml`)
+- Proxy and repos: `options.PROXY`, `options.ENABLEREPO`, `options.DISABLEREPO` (injected into yum commands).
+- Misc toggles used in roles: `options.DEBUG`, `options.YUMCHECK`, etc. See `vars/vars.yml` for the full list and defaults.
+
+## OS‑Specific Behavior
+- Linux
+  - RPM download to `/tmp` and batch `yum` install.
+  - Service commands executed with `/bin/bash`.
+  - Post‑deploy SE Tools and artifact cleanup supported.
+- Windows
+  - Download to `C:\\Temp`.
+  - `CHOCO` packages installed via Chocolatey; `ZIP` unpacked to `installLocation` and `postUnZipCmd` optionally executed.
+  - Service commands executed via PowerShell.
+  - Artifact cleanup is currently disabled in the role (commented out).
+
+## Check Mode Support
+Most phases emit planned commands and simulated summaries when run with `--check`:
+- Download: prints what would be fetched and where.
+- Install: prints before/after hooks and the exact yum commands.
+- Start/Health/Stop: prints the commands it would execute.
+
+## How To Run
+- Prepare connectivity to all hostnames listed in `serverFilters` in `execplan.yml` (SSH/WinRM, vars, and credentials as needed).
+- Provide Artifactory credentials via vars or environment.
+- Run:
+  - `ansible-playbook playbook.yml`
+  - Add `-e @vars/vars.yml` or per‑var `-e KEY=VALUE` to override options.
+  - Use `--check` to preview actions.
+  - INSTALL level‑gating is automatic: if the execplan contains `dependsOn` entries with `currentAction: INSTALL` and `dependsOnAction: INSTALL`, the playbook computes levels and installs by level; otherwise it uses the legacy root-parallel + sequential remainder ordering.
+
+## Outputs And Failure Criteria
+- Per‑host stats: `install_summary` and `start_health_summary` are collected and then aggregated on localhost.
+- The final play fails if any install/start/health failures were recorded across hosts.
+
+## Limitations / Current Behavior
+- `orchestrationOnly`: if present (true/false) on a dependsOn item, no phase injection occurs; if omitted, the playbook injects the dependency’s `dependsOnAction` into the phase map on intersecting hosts. `reverseDependency` is currently ignored.
+- INSTALL is level‑gated automatically if the execplan contains action‑aware install dependencies (`currentAction: INSTALL` and `dependsOnAction: INSTALL`); otherwise legacy ordering is used (roots in parallel, then sequential remainder).
+- `serverFilter` handling for injections: only list values (explicit hostnames) are honored; string labels/patterns are ignored (no translation to hosts).
+- Windows artifact cleanup is not implemented (commented in the role).
+- `DOWNLOAD` implies `INSTALL` even if `INSTALL` is not listed in the lifecycle.
+
+## UNINSTALL lifecycle
+- Why it helps: Some components require other packages/services to be removed before upgrade or re‑provisioning (to avoid file/port conflicts or configuration drift). Wiring `UNINSTALL` enables declarative removal and ordering guarantees, so a component can depend on another’s UNINSTALL to complete before its own INSTALL/START proceeds.
+- Implemented: `UNINSTALL` is a supported lifecycle and may also be injected by dependencies when `orchestrationOnly` is omitted (only list‑based `serverFilter` is honored).
+
+## Example Component (minimal)
+```yaml
+- name: my-service
+  type: SERVICE
+  serverFilters: [ host1, host2 ]
+  lifecycle: [ DOWNLOAD, START, HEALTH_CHECK ]
+  containers:
+    - type: RPM
+      groupId: com.example
+      artifactId: my-service
+      version: 1.2.3
+      serviceCommands:
+        start: /usr/bin/sudo systemctl start my-service
+        stop:  /usr/bin/sudo systemctl stop my-service
+        health: systemctl is-active --quiet my-service
+```
+
+---
+If you want the playbook to honor `orchestrationOnly` or to level‑gate `INSTALL` as well, open an issue or ask for an enhancement and we can wire that in.
+===============================================================================
+
+## Health Check Hardening (/dev/null corruption workaround)
+
+An upstream (non-role) processing defect intermittently mutated `/dev/null` to `devull` inside dynamically rendered Linux health commands, breaking redirections and causing false negatives. All in-line mitigation strategies failed because the corruption occurred before shell execution. Final mitigation now in place:
+
+1. Health commands are base64-encoded in `health_only_linux.yml` when passed to the host.
+2. A wrapper script `roles/deploy_service/files/health_check.sh` decodes and repairs any `devull` variants back to `/dev/null` prior to execution.
+3. The script validates `/dev/null` is a character device and attempts a lightweight restore if not.
+4. Structured output lines (ORIGINAL / REPAIRED / RUNNING / RC) enable reliable log parsing.
+5. A JSON artifact `health_summary_<host>.json` is written summarizing success/failure counts and details.
+
+Rollback: Once the upstream defect is resolved, revert `health_only_linux.yml` to directly loop over the commands with `ansible.builtin.shell: "{{ item }}"` and delete the wrapper script plus summary artifact task.
+
+Extensibility: Additional corruption patterns can be appended to the sed repair block in `health_check.sh` should new variants appear.
+
+### Structured Wrapper Output (Enhanced)
+The wrapper now emits an additional JSON line per command for precise post-processing. Example output sequence:
+
+```
+STAGE: START
+ORIGINAL: ps -ef | grep [M]onitoringID=config-server &>/devull && curl ...
+REPAIRED: ps -ef | grep [M]onitoringID=config-server &>/dev/null && curl ...
+STAGE: EXECUTE
+RUNNING
+RC: 0
+JSON: {"original":"ps -ef | grep ...","repaired":"ps -ef | grep ...","changed":true,"rc":0,"duration_ms":42,"repaired_devnull":true,"timeout_used":false,"dryrun":0,"reason":"SUCCESS","timestamp_iso":"2025-09-18T12:34:56Z"}
+```
+
+Failure semantics:
+* The play no longer aborts mid-loop; all health commands run, their JSON objects are collected, then a single failing task summarizes structured reasons.
+* `reason` field values:
+  * `SUCCESS` – command exited 0.
+  * `DECODE_EMPTY` – base64 decoding produced an empty string (wrapper exits RC 97).
+  * `TIMEOUT` – command exceeded `HC_TIMEOUT` (RC 124 common).
+  * `EXEC_ERROR` – non-zero exit unrelated to timeout.
+
+Artifact JSON (`health_summary_<host>.json`) now contains `details` for both success and failure entries (previously only failures). Each entry includes the raw JSON object plus Ansible rc/stdout/stderr context, enabling downstream analytics or CI gating without parsing free‑form text.
+
+Rollback note: If reverting to a simpler approach, remove JSON parsing logic in `health_only_linux.yml` and the enhanced fields—but keep the base64 + wrapper pattern until the original corruption root cause is definitively resolved.
+
+### Placeholder Fallbacks
+If templating leaves literal placeholders `{{timeout}}`, `{{retry}}`, or `{{retryDelay}}` inside health commands, the wrapper now substitutes safe defaults (configurable via environment):
+
+| Placeholder | Env Variable                | Default |
+|-------------|-----------------------------|---------|
+| `{{timeout}}`     | `HC_FALLBACK_TIMEOUT`      | 10      |
+| `{{retry}}`       | `HC_FALLBACK_RETRY`        | 1       |
+| `{{retryDelay}}`  | `HC_FALLBACK_RETRY_DELAY`  | 1       |
+
+These are only applied if the literal placeholder strings survive into the wrapper (indicating an upstream rendering bypass). Adjust via `options.HEALTH_FALLBACK_*` vars or override env exports to tune runtime behavior.
+
+### Sentinel & Instrumentation Assurance
+
+Reliability instrumentation ensures health telemetry cannot silently disappear:
+
+- Each invocation emits a stderr sentinel: `SENTINEL_HEALTH_WRAPPER_CALL <host>` from `health_only_linux.yml` just before calling the wrapper.
+- The wrapper prints early markers `SENTINEL: WRAPPER_BEGIN` and `SENTINEL: WRAPPER_EXEC` around its execution stage, alongside `STAGE:` lines.
+- A post-task assertion verifies every health command produced exactly one structured `JSON:` line; if counts mismatch, the play fails fast with raw stdout samples for diagnosis.
+
+Validation aids (example commands after a run):
+
+```
+grep -c 'SENTINEL_HEALTH_WRAPPER_CALL' output.log
+grep -c '^JSON: {' output.log
+grep -c 'SENTINEL: WRAPPER_BEGIN' output.log
+```
+
+Counts should align with the number of health commands executed per host. Any discrepancy indicates stdout capture or wrapper execution issues requiring investigation.
+
+### Upstream Plan Sanitization (Real Fix Layer)
+
+To neutralize the `/dev/null` -> `devull` corruption at the earliest possible point, the playbook now performs a deep recursive sanitation pass immediately after loading `execplan.yml` (Play 1). This uses the custom filter `deep_sanitize_info` from `filter_plugins/fix_corruption.py` to traverse all nested structures and fix any corrupted path fragments before later phases (START/HEALTH) construct command lists.
+
+Behavior:
+- Replaces any corrupted variants inside strings across dicts/lists/tuples/sets.
+- Counts total replacements; if `options.DEBUG` is true, logs: `Sanitized /dev/null corruption occurrences: <count>`.
+- Ensures downstream health/stage tasks never *see* the broken form unless corruption happens after ingestion (which would indicate a separate processing layer).
+
+Disable / Rollback:
+- Remove or comment the `Deep sanitize execplan components` task in `playbook.yml`.
+- Or set a variable (future enhancement) to bypass sanitation conditional (not yet implemented—add a `when: not disable_sanitizer | default(false)` if desired).
+
+Rationale: This shifts mitigation from reactive (wrapper repair per execution) to proactive (single pass fix). The wrapper remains as a defense-in-depth layer plus placeholder fallback logic.
+
+### Post-Sanitation Assertions & Command Path Hygiene
+
+Defense-in-depth additions ensure corruption cannot silently reappear:
+
+- Immediate assertion after deep sanitation (`Assert sanitation removed all devull occurrences`) fails fast if any `devull` substrings remain (unless `disable_sanitizer=true`).
+- All Linux start commands and BEFORE/AFTER hooks are re-filtered with `fix_devnull` at execution time plus an assertion confirming no `devull` strings survived.
+- All Linux stop and stopHealth commands are similarly re-filtered and validated.
+- Health execution still uses the wrapper (base64 isolation + runtime repair) and now includes a residual corruption assertion against collected telemetry JSON.
+- Health command list itself is sanitized (`Sanitize health command list`) before wrapper invocation with an assertion.
+- A global assert (`Global assert no devull after phase map build`) ensures no corruption survives after ingest+phase mapping.
+
+By layering (plan ingest sanitize) + (per-phase re-sanitize) + (wrapper repair) + (assertions), any future upstream mutation will be detected early with explicit failure reasons instead of producing misleading health results.
+
+
+# playbook.yml — ExecPlan-driven deployment
+
+# ───────────────────────────────────────────────────────────────
+# Play 1 — Ingest execplan.yml and prepare host phase maps
+# ───────────────────────────────────────────────────────────────
+- name: Ingest exec plan and build host phase maps
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    execplan_file: "execplan.yml"
+
+  pre_tasks:
+    - name: Load options (for PROXY/ENABLEREPO/DISABLEREPO)
+      ansible.builtin.include_vars: vars/vars.yml
+
+  tasks:
+    - name: Read execplan.yml
+      ansible.builtin.set_fact:
+        components: "{{ lookup('file', execplan_file) | from_yaml }}"
+
+    - name: Derive component name lists and dependency groups
+      ansible.builtin.set_fact:
+        component_names: "{{ components | map(attribute='name') | list }}"
+        no_dep_components: "{{ components | selectattr('dependsOn','equalto',[]) | map(attribute='name') | list }}"
+        dep_components_in_order: "{{ (components | rejectattr('name','in', (components | selectattr('dependsOn','equalto',[]) | map(attribute='name') | list)) | map(attribute='name') | list) }}"
+
+    # Compute dependency levels for INSTALL and for START/HEALTH gating
+    - name: Detect presence of action-specific dependency fields
+      ansible.builtin.set_fact:
+        has_dep_actions: >-
+          {{
+            (
+              components | map(attribute='dependsOn') | sum(start=[])
+              | selectattr('currentAction','defined') | list | length
+            ) > 0 or (
+              components | map(attribute='dependsOn') | sum(start=[])
+              | selectattr('dependsOnAction','defined') | list | length
+            ) > 0
+          }}
+
+    - name: Detect presence of INSTALL-specific dependency fields
+      ansible.builtin.set_fact:
+        has_install_actions: >-
+          {{
+            (
+              components | map(attribute='dependsOn') | sum(start=[])
+              | selectattr('currentAction','defined') | selectattr('currentAction','equalto','INSTALL') | list | length
+            ) > 0 or (
+              components | map(attribute='dependsOn') | sum(start=[])
+              | selectattr('dependsOnAction','defined') | selectattr('dependsOnAction','equalto','INSTALL') | list | length
+            ) > 0
+          }}
+
+    # Build INSTALL dependency map and compute levels (roots first)
+    - name: Build INSTALL gating dependency map (action-aware)
+      ansible.builtin.set_fact:
+        comp_deps_map_install: >-
+          {%- set m = {} -%}
+          {%- for c in components -%}
+            {%- set deps = [] -%}
+            {%- for d in (c.dependsOn | default([])) -%}
+              {%- set ca = d.currentAction | default('') -%}
+              {%- set doa = d.dependsOnAction | default('') -%}
+              {%- if ca == 'INSTALL' and doa == 'INSTALL' -%}
+                {%- if d.componentName is defined and d.componentName -%}
+                  {%- set _ = deps.append(d.componentName) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = m.update({ (c.name): (deps | unique) }) -%}
+          {%- endfor -%}
+          {{ m }}
+      when: has_install_actions | bool
+
+    - name: Initialize INSTALL level computation state
+      ansible.builtin.set_fact:
+        comp_deps_map: "{{ comp_deps_map_install }}"
+        _levels: []
+        _done: []
+        _remaining: "{{ component_names | list }}"
+      when: has_install_actions | bool
+
+    - name: Iteratively compute INSTALL dependency levels
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/compute_levels_step.yml
+      loop: "{{ range(0, (component_names | length) + 1) | list }}"
+      loop_control:
+        label: "install-levels iteration {{ item }}"
+      when: has_install_actions | bool
+
+    - name: Assert INSTALL dependency graph is acyclic
+      ansible.builtin.assert:
+        that: (_remaining | length) == 0
+        fail_msg: >-
+          Unresolvable INSTALL deps detected. Remaining components: {{ _remaining }}. Check execplan for cycles or missing names.
+      when: has_install_actions | bool
+
+    - name: Persist INSTALL levels and restore comp_deps_map for START/HEALTH computation
+      ansible.builtin.set_fact:
+        component_levels_install: "{{ _levels }}"
+      when: has_install_actions | bool
+
+    - name: Build START gating dependency map (action-aware)
+      ansible.builtin.set_fact:
+        comp_deps_map: >-
+          {%- set m = {} -%}
+          {%- for c in components -%}
+            {%- set deps = [] -%}
+            {%- for d in (c.dependsOn | default([])) -%}
+              {%- set ca = d.currentAction | default('') -%}
+              {%- set doa = d.dependsOnAction | default('') -%}
+              {%- if ca == 'START' and doa in ['HEALTH_CHECK','START'] -%}
+                {%- if d.componentName is defined and d.componentName -%}
+                  {%- set _ = deps.append(d.componentName) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = m.update({ (c.name): (deps | unique) }) -%}
+          {%- endfor -%}
+          {{ m }}
+      when: has_dep_actions | bool
+
+    - name: "Build START gating dependency map (fallback: generic dependsOn names)"
+      ansible.builtin.set_fact:
+        comp_deps_map: >-
+          {%- set m = {} -%}
+          {%- for c in components -%}
+            {%- set deps = [] -%}
+            {%- for d in (c.dependsOn | default([])) -%}
+              {%- if d is string -%}
+                {%- set _ = deps.append(d) -%}
+              {%- elif d.componentName is defined and d.componentName -%}
+                {%- set _ = deps.append(d.componentName) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = m.update({ (c.name): (deps | unique) }) -%}
+          {%- endfor -%}
+          {{ m }}
+      when: not (has_dep_actions | bool)
+
+    - name: Initialize START/HEALTH level computation state
+      ansible.builtin.set_fact:
+        _levels: []
+        _done: []
+        _remaining: "{{ component_names | list }}"
+
+    - name: Iteratively compute START/HEALTH dependency levels
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/compute_levels_step.yml
+      loop: "{{ range(0, (component_names | length) + 1) | list }}"
+      loop_control:
+        label: "start-levels iteration {{ item }}"
+
+    - name: Assert START/HEALTH dependency graph is acyclic
+      ansible.builtin.assert:
+        that: (_remaining | length) == 0
+        fail_msg: >-
+          Unresolvable dependencies detected. Remaining components: {{ _remaining }}. Check execplan.yml for cycles or missing names.
+
+    - name: Compose yum repo flags
+      ansible.builtin.set_fact:
+        yum_repo_flags: >-
+          {%- set flags = [] -%}
+          {%- if options.DISABLEREPO | default('') | trim -%}
+            {%- set _ = flags.append('--disablerepo=' ~ (options.DISABLEREPO | trim)) -%}
+          {%- endif -%}
+          {%- if options.ENABLEREPO | default('') | trim -%}
+            {%- set _ = flags.append('--enablerepo=' ~ (options.ENABLEREPO | trim)) -%}
+          {%- endif -%}
+          {{ flags | join(' ') }}
+
+    # Pre-resolve Artifactory GAVC URLs (cache on localhost)
+    - name: Normalize Artifactory vars for cache
+      ansible.builtin.set_fact:
+        _art_url: "{{ artifactory_url | default('https://artifactory.intcx.net/artifactory') }}"
+        _art_tok: "{{ artifactory_token | default(lookup('env','ARTIFACTORY_TOKEN') | default(artifactory_password | default(''), true)) }}"
+
+    - name: Build list of unique GAVC keys
+      ansible.builtin.set_fact:
+        _gavc_keys: >-
+          {%- set ks = [] -%}
+          {%- for comp in components | default([]) -%}
+            {%- for cont in comp.containers | default([]) -%}
+              {%- set g = cont.groupId | default('') -%}
+              {%- set a = cont.artifactId | default(cont.name | default('')) -%}
+              {%- set v = cont.version | default('') -%}
+              {%- set p = (cont.type | default('') | lower) -%}
+              {%- if g and a and v and p -%}
+                {%- set _ = ks.append(g ~ ':' ~ a ~ ':' ~ v ~ ':' ~ p) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ ks | unique }}
+
+    - name: Initialize Artifactory URL cache
+      ansible.builtin.set_fact:
+        final_url_cache: {}
+
+    - name: Query Artifactory for GAVC keys
+      ansible.builtin.uri:
+        url: "{{ _art_url }}/api/search/gavc?g={{ (item.split(':')[0]) | urlencode }}&a={{ (item.split(':')[1]) | urlencode }}&v={{ (item.split(':')[2]) | urlencode }}&p={{ (item.split(':')[3]) | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ _art_tok }}"
+        return_content: true
+      register: _gavc_cache_resp
+      loop: "{{ _gavc_keys }}"
+      when: (_gavc_keys | length) > 0 and not (ansible_check_mode | default(false))
+      retries: 3
+      delay: 2
+      until: _gavc_cache_resp.status | default(0) == 200
+      changed_when: false
+
+    - name: Build final_url_cache from responses
+      ansible.builtin.set_fact:
+        final_url_cache: >-
+          {%- set m = {} -%}
+          {%- for r in (_gavc_cache_resp.results | default([])) -%}
+            {%- set k = r.item -%}
+            {%- set p = (k.split(':')[3]) -%}
+            {%- set url = (r.json.results | default([]) | map(attribute='uri') | select('search','\\.' ~ p ~ '$') | map('regex_replace','/api/storage','') | list | first) -%}
+            {%- set _ = m.update({ k: (url | default('')) }) -%}
+          {%- endfor -%}
+          {{ m }}
+      when: _gavc_cache_resp is defined and not (ansible_check_mode | default(false))
+
+    - name: Build dynamic host list from serverFilters
+      ansible.builtin.set_fact:
+        dynamic_hosts: >-
+          {{
+            components
+            | map(attribute='serverFilters') | sum(start=[])
+            | reject('equalto', None) | unique | list
+          }}
+
+    - name: Fail if no hosts
+      ansible.builtin.assert:
+        that: dynamic_hosts | length > 0
+        fail_msg: "No hosts found in execplan.yml."
+
+    - name: Build per-host phase map (STOP/UNINSTALL/DOWNLOAD/INSTALL/START/HEALTH_CHECK)
+      ansible.builtin.set_fact:
+        host_phase_map: >-
+          {%- set out = {} -%}
+          {%- for comp in components | default([]) -%}
+            {%- set phases = (comp.lifecycle | default([])) -%}
+            {%- set do_install = ('INSTALL' in phases) or ('DOWNLOAD' in phases) -%}
+            {%- for h in (comp.serverFilters | default([])) -%}
+              {%- if h not in out -%}
+                {%- set _ = out.update({h: {'STOP':[], 'UNINSTALL':[], 'DOWNLOAD':[], 'INSTALL':[], 'START':[], 'HEALTH_CHECK':[]}}) -%}
+              {%- endif -%}
+              {%- for ph in phases -%}
+                {%- if out[h][ph] is defined -%}
+                  {%- set _ = out[h][ph].append(comp) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- if do_install and ('INSTALL' not in phases) -%}
+                {%- set _ = out[h]['INSTALL'].append(comp) -%}
+              {%- endif -%}
+
+              {#- Dependency-driven injections: for dependsOn entries where orchestrationOnly is absent/false,
+                 ensure the dependsOnAction is scheduled for the dependency on applicable hosts. -#}
+              {%- for d in (comp.dependsOn | default([])) -%}
+                {%- set dn = d.componentName | default('') -%}
+                {%- set dep = (components | selectattr('name','equalto', dn) | list | first) -%}
+                {%- set dep_action = d.dependsOnAction | default('') -%}
+                {%- set dep_hosts = (dep.serverFilters | default([])) if dep is defined else [] -%}
+                {%- set filter_ok = (d.serverFilter is not defined) or (d.serverFilter is sequence and (h in d.serverFilter)) -%}
+                {%- set host_ok = h in dep_hosts -%}
+                {%- if dn and dep is defined and (d.orchestrationOnly is not defined) and filter_ok and host_ok -%}
+                  {#- helper lists of existing names to avoid duplicates -#}
+                  {%- set names_dl = (out[h]['DOWNLOAD'] | map(attribute='name') | list) -%}
+                  {%- set names_in = (out[h]['INSTALL']  | map(attribute='name') | list) -%}
+                  {%- set names_st = (out[h]['START']    | map(attribute='name') | list) -%}
+                  {%- set names_hl = (out[h]['HEALTH_CHECK'] | map(attribute='name') | list) -%}
+                  {%- set names_un = (out[h]['UNINSTALL'] | map(attribute='name') | list) -%}
+                  {%- if dep_action == 'INSTALL' -%}
+                    {%- if dep.name not in names_dl -%}
+                      {%- set _ = out[h]['DOWNLOAD'].append(dep) -%}
+                    {%- endif -%}
+                    {%- if dep.name not in names_in -%}
+                      {%- set _ = out[h]['INSTALL'].append(dep) -%}
+                    {%- endif -%}
+                  {%- elif dep_action == 'START' -%}
+                    {%- if dep.name not in names_st -%}
+                      {%- set _ = out[h]['START'].append(dep) -%}
+                    {%- endif -%}
+                  {%- elif dep_action == 'HEALTH_CHECK' -%}
+                    {#- For a health dependency, also ensure START is present to make health meaningful -#}
+                    {%- if dep.name not in names_st -%}
+                      {%- set _ = out[h]['START'].append(dep) -%}
+                    {%- endif -%}
+                    {%- if dep.name not in names_hl -%}
+                      {%- set _ = out[h]['HEALTH_CHECK'].append(dep) -%}
+                    {%- endif -%}
+                  {%- elif dep_action == 'UNINSTALL' -%}
+                    {%- if dep.name not in names_un -%}
+                      {%- set _ = out[h]['UNINSTALL'].append(dep) -%}
+                    {%- endif -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Register dynamic hosts with per-host variables
+      ansible.builtin.add_host:
+        name: "{{ h }}"
+        groups: dynamic_hosts
+        phase_map: "{{ host_phase_map[h] | default({'STOP':[], 'UNINSTALL':[], 'DOWNLOAD':[], 'INSTALL':[], 'START':[], 'HEALTH_CHECK':[]}) }}"
+        no_dep_components: "{{ no_dep_components }}"
+        dep_components_in_order: "{{ dep_components_in_order }}"
+        component_levels_install: "{{ component_levels_install | default([]) }}"
+        component_levels: "{{ _levels }}"
+        timeout: "{{ timeout | default(30, true) }}"
+        retry: "{{ retry | default(5, true) }}"
+        retryDelay: "{{ retryDelay | default(2, true) }}"
+        yum_repo_flags: "{{ yum_repo_flags }}"
+        options: "{{ options }}"
+        artifactory_url: "{{ artifactory_url | default('https://artifactory.intcx.net/artifactory') }}"
+        artifactory_token: "{{ artifactory_token | default(lookup('env','ARTIFACTORY_TOKEN') | default(artifactory_password | default(''), true)) }}"
+      loop: "{{ dynamic_hosts }}"
+      loop_control: { loop_var: h }
+
+# ───────────────────────────────────────────────────────────────
+# Play 2 — STOP (parallel no-deps, then sequential remainder)
+# ───────────────────────────────────────────────────────────────
+- name: STOP phase (parallel roots, then sequential)
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Stop (Linux) — parallel dependency-free components
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: stop_only_linux.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Stop (Windows) — parallel dependency-free components
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: stop_only_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['STOP'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Stop — sequential remainder (component-ordered)
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
+      vars:
+        phase: STOP
+        component_name: "{{ comp_name }}"
+      loop: "{{ hostvars[inventory_hostname].phase_map['STOP'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
+      loop_control:
+        loop_var: comp_name
+        label: "{{ comp_name }}"
+
+# ───────────────────────────────────────────────────────────────
+# Play 3 — UNINSTALL (parallel no-deps, then sequential remainder)
+# ───────────────────────────────────────────────────────────────
+- name: UNINSTALL phase (parallel roots, then sequential)
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Uninstall — parallel dependency-free components (Linux)
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['UNINSTALL'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_uninstall_batch.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['UNINSTALL'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Uninstall — parallel dependency-free components (Windows)
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['UNINSTALL'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_uninstall_batch_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['UNINSTALL'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Uninstall — sequential remainder (component-ordered)
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
+      vars:
+        phase: UNINSTALL
+        component_name: "{{ comp_name }}"
+      loop: "{{ hostvars[inventory_hostname].phase_map['UNINSTALL'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
+      loop_control:
+        loop_var: comp_name
+        label: "{{ comp_name }}"
+
+# ───────────────────────────────────────────────────────────────
+# Play 4 — DOWNLOAD (parallel no-deps, then sequential remainder)
+# ───────────────────────────────────────────────────────────────
+- name: DOWNLOAD phase (parallel roots, then sequential)
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Download artifacts — parallel dependency-free components
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: service_download.yml
+      loop: "{{ hostvars[inventory_hostname].phase_map['DOWNLOAD'] | selectattr('name','in', no_dep_components) | list }}"
+      loop_control: { loop_var: service, label: "{{ service.name }}" }
+      vars:
+        artifactory_url:   "{{ hostvars[inventory_hostname].artifactory_url }}"
+        artifactory_token: "{{ hostvars[inventory_hostname].artifactory_token }}"
+
+    - name: Download artifacts — sequential remainder (component-ordered)
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
+      vars:
+        phase: DOWNLOAD
+        component_name: "{{ comp_name }}"
+      loop: "{{ hostvars[inventory_hostname].phase_map['DOWNLOAD'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
+      loop_control:
+        loop_var: comp_name
+        label: "{{ comp_name }}"
+
+# ───────────────────────────────────────────────────────────────
+# Play 4 — INSTALL roots (parallel, level 0 only)
+# ───────────────────────────────────────────────────────────────
+- name: INSTALL roots (level 0, parallel)
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Install root components (Linux)
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - hostvars['localhost'].has_install_actions | default(false)
+        - ((hostvars[inventory_hostname].component_levels_install | default([]) | first | default([])) | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_install_batch.yml
+      vars:
+        phase_services: >-
+          {{
+            hostvars[inventory_hostname].phase_map['INSTALL']
+            | selectattr('name','in', (hostvars[inventory_hostname].component_levels_install | default([]) | first | default([])))
+            | list
+          }}
+        yum_repo_flags: "{{ hostvars[inventory_hostname].yum_repo_flags }}"
+        options: "{{ hostvars[inventory_hostname].options }}"
+
+    - name: Install root components (Windows)
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - hostvars['localhost'].has_install_actions | default(false)
+        - ((hostvars[inventory_hostname].component_levels_install | default([]) | first | default([])) | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_install_batch_windows.yml
+      vars:
+        phase_services: >-
+          {{
+            hostvars[inventory_hostname].phase_map['INSTALL']
+            | selectattr('name','in', (hostvars[inventory_hostname].component_levels_install | default([]) | first | default([])))
+            | list
+          }}
+
+# ───────────────────────────────────────────────────────────────
+# Play 4a — INSTALL (legacy: parallel roots, then sequential remainder)
+# ───────────────────────────────────────────────────────────────
+- name: INSTALL phase (legacy root+sequential)
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Host-wide install (Linux) — legacy roots
+      when:
+        - not (hostvars['localhost'].has_install_actions | default(false))
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_install_batch.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list }}"
+        yum_repo_flags: "{{ hostvars[inventory_hostname].yum_repo_flags }}"
+        options: "{{ hostvars[inventory_hostname].options }}"
+
+    - name: Host-wide install (Windows) — legacy roots
+      when:
+        - not (hostvars['localhost'].has_install_actions | default(false))
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_install_batch_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | selectattr('name','in', no_dep_components) | list }}"
+
+# ───────────────────────────────────────────────────────────────
+# Play 4b — START + HEALTH (roots only, parallel)
+# ───────────────────────────────────────────────────────────────
+- name: ROOT START + HEALTH (parallel for no-deps)
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Start root services (Linux)
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: start_only_linux.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Start root services (Windows)
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: start_only_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Health-check root services (Linux)
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: health_only_linux.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list }}"
+
+    - name: Health-check root services (Windows)
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: health_only_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', no_dep_components) | list }}"
+
+# ───────────────────────────────────────────────────────────────
+# Play 4c — Gate dependent installs on root success
+# ───────────────────────────────────────────────────────────────
+- name: Gate dependent installs on root success
+  hosts: localhost
+  gather_facts: false
+  vars:
+    real_hosts: "{{ groups['dynamic_hosts'] | default([]) }}"
+  tasks:
+    - name: Collect root-phase stats from hosts
+      ansible.builtin.set_fact:
+        _root_install_fail_count: >-
+          {{
+            real_hosts
+            | map('extract', hostvars, 'install_summary')
+            | map('default', {'failed_artifacts':[]})
+            | map(attribute='failed_artifacts')
+            | map('length')
+            | sum
+          }}
+        _root_start_fail_count: >-
+          {{
+            real_hosts
+            | map('extract', hostvars, 'start_health_summary')
+            | map('default', []) | list | sum(start=[])
+            | selectattr('start_fail','defined') | selectattr('start_fail','truthy')
+            | list | length
+          }}
+        _root_health_fail_count: >-
+          {{
+            real_hosts
+            | map('extract', hostvars, 'start_health_summary')
+            | map('default', []) | list | sum(start=[])
+            | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
+            | list | length
+          }}
+
+    - name: Debug root-phase failure summary
+      ansible.builtin.debug:
+        msg:
+          install_failures: "{{ _root_install_fail_count }}"
+          start_failures:   "{{ _root_start_fail_count }}"
+          health_failures:  "{{ _root_health_fail_count }}"
+
+    - name: Fail if any root INSTALL/START/HEALTH failed
+      ansible.builtin.fail:
+        msg: >-
+          Root component failures detected (INSTALL/START/HEALTH). Aborting dependent installs.
+      when: >-
+        (_root_install_fail_count | int) > 0 or
+        (_root_start_fail_count | int) > 0 or
+        (_root_health_fail_count | int) > 0
+
+# ───────────────────────────────────────────────────────────────
+# Play 4d — INSTALL (level-gated remainder)
+# ───────────────────────────────────────────────────────────────
+- name: INSTALL remainder (level-gated)
+  hosts: dynamic_hosts
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Prepare INSTALL levels for this host
+      ansible.builtin.set_fact:
+        _levels_install_host: "{{ hostvars[inventory_hostname].component_levels_install | default([]) }}"
+
+    - name: Install services level-by-level (Linux)
+      when:
+        - hostvars['localhost'].has_install_actions | default(false)
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (_levels_install_host | length) > 0
+        - (level_index | default(0)) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_install_batch.yml
+      vars:
+        phase_services: >-
+          {{
+            hostvars[inventory_hostname].phase_map['INSTALL']
+            | selectattr('name','in', level_group)
+            | list
+          }}
+        yum_repo_flags: "{{ hostvars[inventory_hostname].yum_repo_flags }}"
+        options: "{{ hostvars[inventory_hostname].options }}"
+      loop: "{{ _levels_install_host }}"
+      loop_control:
+        loop_var: level_group
+        index_var: level_index
+        label: "level={{ level_index }}"
+
+    - name: Install services level-by-level (Windows)
+      when:
+        - hostvars['localhost'].has_install_actions | default(false)
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (_levels_install_host | length) > 0
+        - (level_index | default(0)) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: host_install_batch_windows.yml
+      vars:
+        phase_services: >-
+          {{
+            hostvars[inventory_hostname].phase_map['INSTALL']
+            | selectattr('name','in', level_group)
+            | list
+          }}
+      loop: "{{ _levels_install_host }}"
+      loop_control:
+        loop_var: level_group
+        index_var: level_index
+        label: "level={{ level_index }}"
+
+    - name: Install — legacy remainder (component-ordered, Linux)
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
+      vars:
+        phase: INSTALL
+        component_name: "{{ comp_name }}"
+      loop: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
+      loop_control:
+        loop_var: comp_name
+        label: "{{ comp_name }}"
+      when:
+        - not (hostvars['localhost'].has_install_actions | default(false))
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+
+    - name: Install — legacy remainder (component-ordered, Windows)
+      ansible.builtin.include_tasks: roles/deploy_service/tasks/wrapped_phase.yml
+      vars:
+        phase: INSTALL
+        component_name: "{{ comp_name }}"
+      loop: "{{ hostvars[inventory_hostname].phase_map['INSTALL'] | rejectattr('name','in', no_dep_components) | map(attribute='name') | list }}"
+      loop_control:
+        loop_var: comp_name
+        label: "{{ comp_name }}"
+      when:
+        - not (hostvars['localhost'].has_install_actions | default(false))
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+# ───────────────────────────────────────────────────────────────
+# Play 5 — START + HEALTH gated by dependency levels
+# ───────────────────────────────────────────────────────────────
+- name: START + HEALTH (level-gated)
+  hosts: dynamic_hosts
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Prepare component levels for this host
+      ansible.builtin.set_fact:
+        _levels_host: "{{ hostvars[inventory_hostname].component_levels | default([]) }}"
+
+    - name: Start services level-by-level (Linux)
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (_levels_host | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: start_only_linux.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
+      loop: "{{ _levels_host }}"
+      loop_control:
+        loop_var: level_group
+        index_var: level_index
+        label: "level={{ level_index }}"
+
+    - name: Start services level-by-level (Windows)
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (_levels_host | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: start_only_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['START'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
+      loop: "{{ _levels_host }}"
+      loop_control:
+        loop_var: level_group
+        index_var: level_index
+        label: "level={{ level_index }}"
+
+    - name: Health-check level-by-level (Linux)
+      when:
+        - (ansible_facts.os_family | default('')) not in ['Windows','windows']
+        - (_levels_host | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: health_only_linux.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
+      loop: "{{ _levels_host }}"
+      loop_control:
+        loop_var: level_group
+        index_var: level_index
+        label: "level={{ level_index }}"
+
+    - name: Health-check level-by-level (Windows)
+      when:
+        - (ansible_facts.os_family | default('')) in ['Windows','windows']
+        - (_levels_host | length) > 0
+      ansible.builtin.include_role:
+        name: deploy_service
+        tasks_from: health_only_windows.yml
+      vars:
+        phase_services: "{{ hostvars[inventory_hostname].phase_map['HEALTH_CHECK'] | selectattr('name','in', level_group) | rejectattr('name','in', no_dep_components) | list }}"
+      loop: "{{ _levels_host }}"
+      loop_control:
+        loop_var: level_group
+        index_var: level_index
+        label: "level={{ level_index }}"
+
+# Play 6 removed; Health checks are performed within Play 5 per level
+
+# ───────────────────────────────────────────────────────────────
+# Play 7 — Aggregate results
+# ───────────────────────────────────────────────────────────────
+- name: POST_DEPLOY cleanup and SE Tools
+  hosts: dynamic_hosts
+  gather_facts: false
+  strategy: free
+  tasks:
+    - ansible.builtin.setup: { gather_subset: [min] }
+
+    - name: Clear prior host errors so post-deploy still runs
+      meta: clear_host_errors
+
+    - block:
+        - name: Run post_deploy role (SE Tools + cleanup)
+          ansible.builtin.include_role:
+            name: post_deploy
+      rescue:
+        - name: Report post_deploy failure but continue
+          ansible.builtin.debug:
+            msg: "post_deploy failed on {{ inventory_hostname }} — continuing to next host"
+      always:
+        - name: Mark post_deploy attempted
+          ansible.builtin.debug:
+            msg: "post_deploy attempted on {{ inventory_hostname }}"
+
+
+- name: Aggregate results and fail on errors
+  hosts: localhost
+  gather_facts: false
+  vars:
+    real_hosts: "{{ groups['dynamic_hosts'] | default([]) }}"
+  tasks:
+    - name: Collect stats (normalize shapes)
+      ansible.builtin.set_fact:
+        install_summary: >-
+          {{
+            real_hosts
+            | map('extract', hostvars, 'install_summary')
+            | map('default', {'success_artifacts':[], 'failed_artifacts':[]})
+            | list
+          }}
+        start_health_summary: >-
+          {{
+            real_hosts
+            | map('extract', hostvars, 'start_health_summary')
+            | map('default', [])
+            | list
+          }}
+
+    - name: Show summarized results
+      ansible.builtin.debug:
+        msg:
+          failed_installs: >-
+            {{
+              install_summary
+              | map(attribute='failed_artifacts') | select('defined') | select('truthy')
+              | list | length
+            }}
+          failed_starts: >-
+            {{
+              start_health_summary | sum(start=[])
+              | selectattr('start_fail','defined') | selectattr('start_fail','truthy')
+              | list | length
+            }}
+          failed_health: >-
+            {{
+              start_health_summary | sum(start=[])
+              | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
+              | list | length
+            }}
+
+    - name: Fail if any install/start/health failures
+      ansible.builtin.fail:
+        msg: "Deployment failures detected. See host stats above."
+      when: >
+        (
+          install_summary
+          | map(attribute='failed_artifacts') | select('defined') | select('truthy')
+          | list | length
+        ) > 0
+        or
+        (
+          start_health_summary | sum(start=[])
+          | selectattr('start_fail','defined')  | selectattr('start_fail','truthy')
+          | list | length
+        ) > 0
+        or
+        (
+          start_health_summary | sum(start=[])
+          | selectattr('health_fail','defined') | selectattr('health_fail','truthy')
+          | list | length
+        ) > 0
