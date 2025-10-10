@@ -1,506 +1,154 @@
-- name: iceamazoncorretto.11.0.15.9.1
+- name: airflowdags
   type: ""
   dependsOn: []
   actionCommands: []
   containers: []
   serverFilters: []
-- name: iceamazoncorretto.17.0.3.6.1
+- name: apigateway
   type: ""
   dependsOn: []
   actionCommands: []
   containers: []
   serverFilters: []
-- name: iceamazoncorretto.21.0.1.12.1
+- name: ICE-choco-dotnet-3.1.29
+  type: nupkg
+  dependsOn: []
+  actionCommands: []
+  containers:
+    - type: nupkg
+      groupId: com.java.jdk-8u181
+      artifactId: ICE-choco-dotnet-3.1.29
+      version: "3.1.29.nupkg"
+      rpmName: ""
+      containerType: nupkg
+  serverFilters:
+    - m4s-q35-cums-01
+  lifecycle:
+    - INSTALL
+- name: becjava-windows
   type: PACKAGE
   dependsOn: []
   actionCommands: []
   containers:
-    - type: RPM
-      groupId: com.theice.java.amazon.corretto
-      artifactId: ICEAmazonCorretto.21.0.1.12.1
-      version: 1.0.1
-      rpmName: ICEAmazonCorretto.21.0.1.12.1
-      containerType: RPM
+    - type: CHOCO
+      groupId: com.java.jdk-8u181
+      artifactId: ICE-choco-jdk-8u181-x64
+      version: ""
+      rpmName: ""
+      containerType: CHOCO
   serverFilters:
-    - m4s-i1-cudlas-02
+    - m4s-q35-cums-01
   lifecycle:
-    - DOWNLOAD
-- name: icejava.1.8.0.201
-  type: PACKAGE
-  dependsOn: []
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.theice.java.java-180201
-      artifactId: ICEjava.1.8.0.201
-      version: 1.0.7
-      rpmName: ICEjava.1.8.0.201
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-02
-  lifecycle:
-    - DOWNLOAD
-- name: iceclearingwallet-linux
+    - INSTALL
+- name: becjboss-windows
   type: PACKAGE
   dependsOn:
-    - componentName: iceamazoncorretto.11.0.15.9.1
-      serverFilter: ice.host.name=${ice.host.name}
+    - componentName: becjava-windows
       reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      componentFilter: not ( component=${component} )
-      orchestrationOnly: true
-    - componentName: icejava.1.8.0.201
-      serverFilter: ice.host.name=${ice.host.name}
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      componentFilter: not ( component=${component} )
-      orchestrationOnly: true
   actionCommands: []
   containers:
-    - type: RPM
-      groupId: com.theice.icedbaadmin.wallets.rpm
-      artifactId: ICEclearingwallet-Linux
-      version: 3.0.0.168
-      rpmName: ICEclearingwallet-Linux
-      containerType: RPM
+    - type: CHOCO
+      groupId: com.theice.re.tools
+      artifactId: ICEchoco-jboss6.4
+      version: ""
+      rpmName: ""
+      containerType: CHOCO
   serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
+    - m4s-q35-cums-01
   lifecycle:
-    - DOWNLOAD
-- name: redis
+    - INSTALL
+- name: becwallet-windows
   type: PACKAGE
-  dependsOn: []
+  dependsOn:
+    - componentName: becjboss-windows
+      reverseDependency: false
   actionCommands: []
   containers:
-    - type: RPM
-      groupId: com.theice.redis
-      artifactId: ICEredis6
-      version: 6.0.5.ICE.3
-      rpmName: ICEredis6
-      containerType: RPM
+    - type: ZIP
+      groupId: com.theice.bec
+      artifactId: ICEbec-wallet-distribution
+      version: 2.0.0.117
+      rpmName: ""
+      installLocation: D:\chillo-deploy\becwallet-windows
+      postUnZipCmd: cd D:\\chillo-deploy\\becwallet-windows ; .\install.ps1
+      containerType: ZIP
   serverFilters:
-    - m4s-i1-cudlas-02
+    - m4s-q35-cums-01
   lifecycle:
     - DOWNLOAD
-- name: redis-exporter
-  type: PACKAGE
-  dependsOn: []
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.theice.redis
-      artifactId: ICEredis-exporter
-      version: 1.0.0
-      rpmName: ICEredis-exporter
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-02
-  lifecycle:
-    - DOWNLOAD
-- name: sdp-canola-config
+    - INSTALL
+- name: marginservice
   type: SERVICE
   dependsOn:
-    - componentName: iceamazoncorretto.17.0.3.6.1
+    - componentName: becwallet-windows
       reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
   actionCommands: []
   containers:
-    - type: RPM
-      groupId: com.theice.clearing.deliveries
-      artifactId: ICEdel-config-server-rpm
-      version: 1.10.3.2.0-SNAPSHOT
-      rpmName: ICEdel-config-server-rpm
+    - type: ZIP
+      groupId: com.theice.marginservice
+      artifactId: ICEmarginservice-distribution
+      version: 9.3.6.0.2
+      rpmName: ""
       serviceCommands:
-        health: ps -ef | grep -i delcs | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15020/actuator/health | grep UP
-        start: /usr/bin/sudo /var/opt/delcs/scripts/startStop.sh start icus
-        stop: /usr/bin/sudo /var/opt/delcs/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i delcs | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
+        health: if (((nssm status marginservice) | Select-String "SERVICE_RUNNING")) { Exit 0} else {Exit 1}
+        start: nssm start marginservice; Start-Sleep -Seconds 60
+        stop: Start-Job -ScriptBlock {nssm stop marginservice}; Start-Sleep -Seconds 60
+        stopHealth: if (((nssm status marginservice) | Select-String "SERVICE_STOPPED")) { Exit 0} else {Exit 1}
+      installLocation: D:\chillo-deploy\marginservice
+      postUnZipCmd: cd D:\\chillo-deploy\\marginservice ; .\install.ps1
+      containerType: ZIP
   serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
+    - m4s-q35-cums-01
   actionServerFilters:
     HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
+      - m4s-q35-cuaas-01
+      - m4s-q35-cubas-01
+      - m4s-q35-cucas-01
+      - m4s-q35-cums-01
     START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
+      - m4s-q35-cuaas-01
+      - m4s-q35-cubas-01
+      - m4s-q35-cucas-01
+      - m4s-q35-cums-01
   lifecycle:
+    - STOP
     - DOWNLOAD
+    - INSTALL
     - START
     - HEALTH_CHECK
-- name: sdp-canola-core
-  type: SERVICE
-  dependsOn:
-    - componentName: iceamazoncorretto.17.0.3.6.1
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: iceclearingwallet-linux
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: sdp-canola-config
-      serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.theice.clearing.deliveries
-      artifactId: ICEdel-core-rpm
-      version: 1.10.3.0_0.4
-      rpmName: ICEdel-core-rpm
-      serviceCommands:
-        health: ps -ef | grep -i delcore | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15010/actuator/health | grep UP
-        start: /usr/bin/sudo /var/opt/delcore/scripts/startStop.sh start lbon
-        stop: /usr/bin/sudo /var/opt/delcore/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i delcore | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
-    START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
-- name: sdp-canola-ops-console
-  type: SERVICE
-  dependsOn:
-    - componentName: iceamazoncorretto.17.0.3.6.1
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: sdp-canola-config
-      serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.theice.clearing.deliveries
-      artifactId: ICEdel-ops-console-rpm
-      version: 1.10.3.0.3
-      rpmName: ICEdel-ops-console-rpm
-      serviceCommands:
-        health: ps -ef | grep -i delops | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15030/actuator/health | grep UP
-        start: /usr/bin/sudo /var/opt/delops/scripts/startStop.sh start
-        stop: /usr/bin/sudo /var/opt/delops/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i delops | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
-    START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
-- name: sdp-canola-portal
-  type: SERVICE
-  dependsOn:
-    - componentName: iceamazoncorretto.17.0.3.6.1
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: sdp-canola-config
-      serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.theice.clearing.deliveries
-      artifactId: ICEdel-portal-rpm
-      version: 1.10.2.1_0.1
-      rpmName: ICEdel-portal-rpm
-      serviceCommands:
-        health: ps -ef | grep -i delportal | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15040/actuator/health | grep UP
-        start: /usr/bin/sudo /var/opt/delportal/scripts/startStop.sh start
-        stop: /usr/bin/sudo /var/opt/delportal/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i delportal | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
-    START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
-- name: sdp-redis
+- name: imc-maps-dumpsmoverservice
   type: SERVICE
   dependsOn: []
-  actionCommands: []
   containers:
-    - type: RPM
-      groupId: com.theice.clearing.deliveries
-      artifactId: ICEsdp-redis-master
-      version: 2.4.0.0_0.0
-      rpmName: ICEsdp-redis-master
+    - type: CHOCO
+      groupId: Clearing.IRS
+      artifactId: SD.ICE.Maps.DumpsMoverService
+      version: 1.79.1.9.nupkg
+      rpmName: ""
       serviceCommands:
-        health: ps -ef | grep -i redis | grep redis-server | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
-        start: /usr/bin/sudo /etc/rc2.d/s88-svc-redis-master start
-        stop: /usr/bin/sudo /etc/rc2.d/s88-svc-redis-master stop
-        stopHealth: '! ps -ef | grep -i redis | grep redis-server | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-        - m4s-i1-cudlas-02
-        - m4s-i1-cudldb-01
-        - m4s-i1-cuws-01
-    START:
-        - m4s-i1-cudlas-01
-        - m4s-i1-cudlas-02
-        - m4s-i1-cudldb-01
-        - m4s-i1-cuws-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
-- name: sdp-redis-master
-  type: ""
-  dependsOn: []
-  actionCommands: []
-  containers: []
-  serverFilters: []
-- name: sdp-config
-  type: SERVICE
-  dependsOn:
-    - componentName: iceamazoncorretto.21.0.1.12.1
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: sdp-redis-master
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-      orchestrationOnly: true
-  actionCommands:
-    - name: health-check-icus
-      command: curl -v --connect-timeout 10 --max-time 5 --retry 50 --retry-delay 5 --retry-connrefused http://localhost:15025/actuator/health | grep UP
-      action: HEALTH_CHECK
-      runStage: AFTER
-    - name: health-check-not-icus
-      command: curl -v --connect-timeout 10 --max-time 5 --retry 50 --retry-delay 5 --retry-connrefused http://localhost:15020/actuator/health | grep UP
-      action: HEALTH_CHECK
-      runStage: AFTER
-  containers:
-    - type: RPM
-      groupId: com.theice.clearing.deliveries
-      artifactId: ICEsdp-config
-      version: 2.4.0.0_0.36
-      rpmName: ICEsdp-config
+        stop: If ((Get-Service SD.ICE.Maps.DumpsMoverService).Status -ne 'Stopped') {Stop-Service -Name SD.ICE.Maps.DumpsMoverService}
+        start: If ((Get-Service SD.ICE.Maps.DumpsMoverService).Status -ne 'Running') {Start-Service -Name SD.ICE.Maps.DumpsMoverService}
+        health: (Get-Service SD.ICE.Maps.DumpsMoverService).Status -ne 'Stopped'
+        stopHealth: (Get-Service SD.ICE.Maps.DumpsMoverService).Status -ne 'Running'
+    - type: CHOCO
+      groupId: Clearing.IRS
+      artifactId: SD.ICE.Maps.EodServiceHost
+      version: 1.79.1.9.nupkg
+      rpmName: ""
       serviceCommands:
-        health: ps -ef | grep -i svc_sdp_config | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null
-        start: /usr/bin/sudo /var/opt/svc_sdp_config/scripts/startStop.sh start
-        stop: /usr/bin/sudo /var/opt/svc_sdp_config/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i svc_sdp_config | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
-    START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
-- name: svcmft
-  type: PACKAGE
-  dependsOn: []
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.theice.svcmft
-      artifactId: ICEsvcmft
-      version: 2.40.4
-      rpmName: ICEsvcmft
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-        - m4s-i1-cudlas-02
-        - m4s-i1-cudldb-01
-        - m4s-i1-cuws-01
-    START:
-        - m4s-i1-cudlas-01
-        - m4s-i1-cudlas-02
-        - m4s-i1-cudldb-01
-        - m4s-i1-cuws-01
-  lifecycle:
-    - DOWNLOAD
-- name: sdp-file-integration
-  type: SERVICE
-  dependsOn:
-    - componentName: iceamazoncorretto.21.0.1.12.1
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: iceclearingwallet-linux
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: sdp-config
-      serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-    - componentName: svcmft
-      serverFilter: sdp-commodity-server
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.ice.clearing.sdp
-      artifactId: ICEsdp-file-integration
-      version: 2.4.0.0_0.30
-      rpmName: ICEsdp-file-integration
+        stop: If ((Get-Service SD.ICE.Maps.EODFileImporterService).Status -ne 'Stopped') {Stop-Service -Name SD.ICE.Maps.EODFileImporterService}
+        start: If ((Get-Service SD.ICE.Maps.EODFileImporterService).Status -ne 'Running') {Start-Service -Name SD.ICE.Maps.EODFileImporterService}
+        health: (Get-Service SD.ICE.Maps.EODFileImporterService).Status -ne 'Stopped'
+        stopHealth: (Get-Service SD.ICE.Maps.EODFileImporterService).Status -ne 'Running'
+    - type: CHOCO
+      groupId: Clearing.IRS
+      artifactId: SD.ICE.Maps.IISHost
+      version: 1.79.1.9.nupkg
+      rpmName: ""
       serviceCommands:
-        health: ps -ef | grep -i svc_file_integration | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15120/file-integration/actuator/health | grep UP
-        start: /usr/bin/sudo /var/opt/svc_file_integration/scripts/startStop.sh start
-        stop: /usr/bin/sudo /var/opt/svc_file_integration/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i svc_file_integration | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
+        stop: If ((Get-Service IISADMIN).Status -ne 'Stopped') {Stop-Service -Name IISADMIN}
+        start: If ((Get-Service IISADMIN).Status -ne 'Running') {Start-Service -Name IISADMIN}
+        health: (Get-Service IISADMIN).Status -ne 'Stopped'
+        stopHealth: (Get-Service IISADMIN).Status -ne 'Running'
   serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
-    START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
-- name: sdp-ddi
-  type: SERVICE
-  dependsOn:
-    - componentName: iceamazoncorretto.21.0.1.12.1
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: iceclearingwallet-linux
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-    - componentName: sdp-config
-      serverFilter: m4s-i1-cudlas-01
-      reverseDependency: false
-      currentAction: START
-      dependsOnAction: START
-    - componentName: sdp-file-integration
-      serverFilter: sdp-commodity-server
-      reverseDependency: false
-      currentAction: INSTALL
-      dependsOnAction: INSTALL
-      orchestrationOnly: true
-  actionCommands: []
-  containers:
-    - type: RPM
-      groupId: com.ice.clearing.sdp
-      artifactId: ICEsdp-ddi
-      version: 2.4.0.0_0.52
-      rpmName: ICEsdp-ddi
-      serviceCommands:
-        health: ps -ef | grep -i svc_ddi | grep 'bin/java' | grep -vE 'spool|grep|bash|color=auto|mail' &>/dev/null &&  curl -v --connect-timeout 10 --max-time {{timeout}} --retry {{retry}} --retry-delay {{retryDelay}} --retry-connrefused http://localhost:15130/ddi/actuator/health | grep UP
-        start: /usr/bin/sudo /var/opt/svc_ddi/scripts/startStop.sh start
-        stop: /usr/bin/sudo /var/opt/svc_ddi/scripts/startStop.sh stop
-        stopHealth: '! ps -ef | grep -i svc_ddi | grep ''bin/java'' | grep -vE ''spool|grep|bash|color=auto|mail'' &>/dev/null'
-      containerType: RPM
-  serverFilters:
-    - m4s-i1-cudlas-01
-    - m4s-i1-cudlas-02
-  actionServerFilters:
-    HEALTH_CHECK:
-        - m4s-i1-cudlas-01
-    INSTALL:
-        - m4s-i1-cudlas-01
-    START:
-        - m4s-i1-cudlas-01
-    STOP:
-        - m4s-i1-cudlas-01
-    STOP_CHECK:
-        - m4s-i1-cudlas-01
-  lifecycle:
-    - DOWNLOAD
-    - START
-    - HEALTH_CHECK
+    - m4s-q35-cebo-01
