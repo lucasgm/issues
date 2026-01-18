@@ -52,3 +52,9 @@ YUM
       Please ensure the artifact is built and available in the repository.
       If this is a fresh build, wait 15 minutes for YUM cache to update.
   when: yum_final_check.rc != 0
+=======
+- name: Set YUM upgrade command
+  ansible.builtin.set_fact:
+    yum_upgrade_command: >-
+      {{ 'yum upgrade -y ' + (options.YUMSWITCHES | default('')) + ' ' + yum_repos +
+      ' ' + (artifact_file if is_snapshot or use_rpm_for_yum else rpm_name + '-' + options.VERSION) }}
