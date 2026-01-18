@@ -1,0 +1,54 @@
+YUM
+
+/usr/bin/sudo rpm -ivh#{rpmSwitches} #{artifactFile}
+/usr/bin/sudo yum install -y #{yumSwitches} #{yumRepos} #{rpmname}
+
+- name: Generate yumRepos fact
+  ansible.builtin.set_fact:
+    yumRepos: >-
+      {%- set repo_enable = "--enablerepo=" ~ options.ENABLEREPO if options.ENABLEREPO | trim | length > 0 else "" -%}
+      {%- set repo_disable = "--disablerepo=" ~ options.DISABLEREPO if options.DISABLEREPO | trim | length > 0 else "" -%}
+      {{ (repo_disable ~ " " ~ repo_enable).strip() }}
+
+- name: Verify artifact exists in YUM repository
+  ansible.builtin.command:
+    cmd: "yum list --showduplicates {{ yumRepos }} {{ options.ARTIFACT }}-{{ options.VERSION }} --setopt=cachedir=/var/opt/data/{{ options.ARTIFACT }}"
+  register: yum_check_result
+  ignore_errors: true
+  # Only perform check if version is not latest and FORCE is not enabled.
+  when: (options.VERSION | lower) != 'latest' and not (options.FORCE | default(false) | bool)
+
+- name: Run YUM makecache if the artifact is not found
+  ansible.builtin.command:
+    cmd: "yum makecache {{ yumRepos }} --setopt=cachedir=/var/opt/data/{{ options.ARTIFACT }}"
+  when: yum_check_result.rc != 0
+  register: yum_makecache_result
+  ignore_errors: true
+
+- name: Clean YUM cache after makecache
+  ansible.builtin.command:
+    cmd: "yum clean all {{ yumRepos }} --setopt=cachedir=/var/opt/data/{{ options.ARTIFACT }}"
+  when: yum_check_result.rc != 0
+  register: yum_clean_result
+  ignore_errors: true
+
+- name: Retry YUM check after cache update
+  ansible.builtin.command:
+    cmd: "yum list --showduplicates {{ yumRepos }} {{ options.ARTIFACT }}-{{ options.VERSION }} --setopt=cachedir=/var/opt/data/{{ options.ARTIFACT }}"
+  register: yum_final_check
+  ignore_errors: true
+  when: yum_check_result.rc != 0
+
+- name: Clean YUM cache after verification
+  ansible.builtin.command:
+    cmd: "yum clean all {{ yumRepos }} --setopt=cachedir=/var/opt/data/{{ options.ARTIFACT }}"
+  register: yum_final_clean
+  ignore_errors: true
+
+- name: Fail if artifact is not available in YUM
+  ansible.builtin.fail:
+    msg: |
+      ERROR: Artifact {{ options.ARTIFACT }}-{{ options.VERSION }} is not in the YUM cache.
+      Please ensure the artifact is built and available in the repository.
+      If this is a fresh build, wait 15 minutes for YUM cache to update.
+  when: yum_final_check.rc != 0
