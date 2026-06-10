@@ -1,0 +1,119 @@
+A better mental model
+
+Think of an environment as:
+
+Environment
+├── Resources
+├── Resource Groups
+├── Component Mappings
+├── Inventory
+├── Properties
+├── Approval Rules
+└── Agents (through resources)
+
+So if you're building an API integration and discover only:
+
+{
+  "application": "MyApp",
+  "environment": "DEV"
+}
+
+there is usually much more information behind that environment than just the agents. The environment defines where components go, what is already deployed, what properties apply, who must approve deployments, and which agents execute the work.
+
+I am working on a third party tool which can trigger deployments through various tools one of them is UCD. This tool has a UI depending on the selected deployment tools will display a menu like for UCD will be application, components ...
+in order to display this menu I need to cache UCD data like Application, environments, components and I am trying to determine what other data do i need to capture not sure I I need to captured agents per environment
+
+I’ll frame this as a UI/cache design problem: what data is needed to let a user choose and trigger a valid UCD deployment, and what can stay optional or lazy-loaded.
+
+For your UI cache, I would not make agents a required menu item for triggering UCD deployments.
+
+For UCD deployment trigger UI, cache these first:
+
+Application
+├── Environments
+├── Application Processes
+├── Components
+│   ├── Component Processes
+│   └── Component Versions
+└── Snapshots
+
+Minimum needed to request a deployment:
+
+Application
+Environment
+Application Process
+Snapshot OR Component Versions
+
+IBM/HCL describes UCD deployments around applications, environments, components, and processes; components are deployable artifacts, and new imported artifacts create component versions.
+
+Agents are usually execution infrastructure, not user deployment input. The environment/resource tree resolves which agents run the work. So only cache agents if your tool needs to show infrastructure health or debug where a deployment will run.
+
+Recommended cache model:
+
+type UCDApplicationCache struct {
+    ApplicationID   string
+    ApplicationName string
+
+    Environments []UCDEnvironment
+    AppProcesses []UCDProcess
+    Components   []UCDComponent
+    Snapshots    []UCDSnapshot
+}
+
+type UCDEnvironment struct {
+    ID   string
+    Name string
+
+    // Optional / advanced
+    Resources []UCDResource
+}
+
+type UCDComponent struct {
+    ID        string
+    Name      string
+    Processes []UCDProcess
+    Versions  []UCDVersion
+}
+
+type UCDSnapshot struct {
+    ID   string
+    Name string
+}
+
+type UCDProcess struct {
+    ID   string
+    Name string
+}
+
+type UCDVersion struct {
+    ID   string
+    Name string
+}
+
+type UCDResource struct {
+    ID        string
+    Name      string
+    AgentName string
+}
+
+For the UI, I would display:
+
+Deployment Tool: UCD
+Application: <select>
+Environment: <select>
+Application Process: <select>
+Deploy By:
+  - Snapshot
+  - Component Versions
+Snapshot: <select>
+or
+Component Versions:
+  API: <select version>
+  UI: <select version>
+
+Agents should be optional, maybe under:
+
+Advanced / Environment Details
+  Resources
+  Agents
+  Agent online/offline status
