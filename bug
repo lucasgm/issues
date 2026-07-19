@@ -1,287 +1,97 @@
-package main
+Description
+Create comprehensive telemetry instrumentation and Splunk dashboards to monitor and report on third-party container images throughout their lifecycle - from whitelisting through ingestion, approval, and security vulnerability detection.
+ 
 
-import (
-	"bufio"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"strings"
-	"time"
-)
+Business Value
+Enhanced visibility into third-party image usage and security posture
+Proactive tracking of vulnerable images at ingestion
+Data-driven decision making for image approval processes
+Compliance and audit trail for image whitelisting
+ 
 
-const (
-	artifactoryURL = "https://artiluc.luc.net"
-	token          = "xxxx"
+Acceptance Criteria
+1. Telemetry Implementation
+Instrument the following events with structured logging to Splunk:
+ 
+Image Whitelisting Events:
 
-	inputFile    = "input.txt"
-	notFoundFile = "not_found.txt"
-	//outputFile   = "output.csv"
-)
+Image whitelist request initiated
+Image whitelist approved/rejected
+Whitelist expiration/renewal
+ 
+Image Ingestion Events:
 
-type Artifact struct {
-	Repo       string     `json:"repo"`
-	Path       string     `json:"path"`
-	Name       string     `json:"name"`
-	Type       string     `json:"type"`
-	Created    string     `json:"created"`
-	Properties []Property `json:"properties"`
-}
+New image ingestion attempt
+Image validation status (pass/fail)
+Vulnerability scan initiated
+Vulnerability scan completed with severity levels (Critical/High/Medium/Low)
+ 
+Image Approval Events:
 
-type Property struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
+Image approval workflow triggered
+Image approved/rejected with reason
+New release detected for existing whitelisted image
+ 
 
-type Range struct {
-	StartPos int `json:"start_pos"`
-	EndPos   int `json:"end_pos"`
-	Total    int `json:"total"`
-	Limit    int `json:"limit"`
-}
+2. Metrics to Capture
+Total images whitelisted (cumulative and time-based)
+Images whitelisted per week/month
+New images approved (time-series)
+New releases detected (version tracking)
+Vulnerabilities at ingestion:
+Total vulnerable images
+Breakdown by severity (Critical/High/Medium/Low)
+Failure rate percentage
+Ingestion failures:
+Count and percentage
+Failure reasons categorized
+Time-to-approval metrics (average, P50, P95, P99)
+Image source distribution (registry/vendor breakdown)
+ 
 
-type AppDetails struct {
-	Results []Artifact `json:"results"`
-	Range   Range      `json:"range"`
-}
+3. Splunk Dashboard Requirements
+Dashboard 1: Image Whitelisting Overview
 
-type HTTPClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
+Total images whitelisted (current count)
+Weekly/monthly whitelisting trend chart
+Top image sources/vendors
+Approval rate (approved vs rejected)
+ 
+Dashboard 2: Security & Vulnerability Metrics
 
-func main() {
-	// Read artifact names from input file
-	artifactNames, err := readLines(inputFile)
-	if err != nil {
-		fmt.Printf("Error reading input file: %v\n", err)
-		return
-	}
+Vulnerable images at ingestion (pie chart by severity)
+Vulnerability trend over time (line chart)
+Failed ingestion count and reasons
+Images requiring remediation (actionable list)
+ 
+Dashboard 3: Operational Metrics
 
-	// Create a file to write not found artifact names (optional, can be removed if not needed)
-	// notFound, err := os.Create(notFoundFile)
-	// if err != nil {
-	// 	fmt.Printf("Error creating not found file: %v\n", err)
-	// 	return
-	// }
-	// defer notFound.Close()
+New releases tracked
+Time-to-approval distribution
+Processing pipeline health (success vs failure rates)
+Alert panel for critical vulnerabilities detected
+ 
+Dashboard 4: Compliance & Audit
 
-	// Create a JSON file to write artifact results
-	jsonOutputFile := "ICEprism-ui.json"
-	output, err := os.Create(jsonOutputFile)
-	if err != nil {
-		fmt.Printf("Error creating output file: %v\n", err)
-		return
-	}
-	defer output.Close()
+Historical whitelist changes
+Image lifecycle timeline
+Policy violation tracking
+ 
 
-	client := &http.Client{
-		Timeout: time.Second * 500,
-	}
+4. Technical Implementation
+Logging Standards:
 
-	// Deduplicate artifacts by Name+Path, prefer 'rm-shared' over 'rm-shared-maven'
-	type dedupKey struct {
-		Name string
-		Path string
-	}
-	deduped := make(map[dedupKey]Artifact)
+Use structured JSON logging format
+Include standard fields: timestamp, event_type, image_name, image_version, image_registry, status, vulnerability_count, severity_levels, user_id, action
+Implement correlation IDs for tracking image lifecycle
+ 
+Splunk Integration:
 
-	for _, line := range artifactNames {
-		name, version, ok := parseInputLine(line)
-		if !ok {
-			fmt.Printf("Skipping invalid input line: %s\n", line)
-			continue
-		}
+Configure Splunk HEC (HTTP Event Collector) endpoint
+Implement retry logic and buffering
+Set up index and sourcetype: index=security sourcetype=third_party_images
+ 
+5. Alerts Configuration * Alert when critical vulnerabilities detected at ingestion
 
-		// Query for regular file artifacts (rpm, jar, nupkg, etc.)
-		fileQuery := constructAQLQuery(name, version)
-		if foundArtifacts, err := fetchArtifacts(client, fileQuery); err != nil {
-			fmt.Printf("Error fetching artifact %s: %v\n", line, err)
-		} else {
-			for _, artifact := range foundArtifacts.Results {
-				key := dedupKey{artifact.Name, artifact.Path}
-				if prev, exists := deduped[key]; !exists || len(artifact.Properties) > len(prev.Properties) {
-					deduped[key] = artifact
-				}
-			}
-		}
-
-		// Also query for Docker images (stored as manifest.json under <name>/<version>/)
-		dockerQuery := constructDockerAQLQuery(name, version)
-		if foundDocker, err := fetchArtifacts(client, dockerQuery); err != nil {
-			fmt.Printf("Error fetching docker artifact %s: %v\n", line, err)
-		} else {
-			for _, artifact := range foundDocker.Results {
-				key := dedupKey{artifact.Name, artifact.Path}
-				if prev, exists := deduped[key]; !exists || len(artifact.Properties) > len(prev.Properties) {
-					deduped[key] = artifact
-				}
-			}
-		}
-	}
-
-	// Prepare output in AppDetails format
-	var outputArtifacts []Artifact
-	for _, artifact := range deduped {
-		outputArtifacts = append(outputArtifacts, artifact)
-	}
-
-	// Optionally, sort outputArtifacts by Name/Path if desired
-
-	// Write to JSON file
-	appDetails := AppDetails{
-		Results: outputArtifacts,
-		Range: Range{
-			StartPos: 0,
-			EndPos:   len(outputArtifacts) - 1,
-			Total:    len(outputArtifacts),
-			Limit:    len(outputArtifacts),
-		},
-	}
-	encoder := json.NewEncoder(output)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(appDetails); err != nil {
-		fmt.Printf("Error writing JSON output: %v\n", err)
-		return
-	}
-}
-
-// readLines reads a whole file into memory and returns a slice of its lines.
-func readLines(path string) ([]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	return lines, scanner.Err()
-}
-
-func constructAQLQuery2() string {
-	query := fmt.Sprintf(`items.find({
-	"repo": {"$nmatch": "clearing-*"}
-	}).include("repo", "path", "name", "created", "type", "property")`)
-	return query
-}
-
-// func constructAQLQuery(pattern string) string {
-// 	query := fmt.Sprintf(`items.find({
-//     "type": "file",
-//     "name": {"$match": "%s*.rpm"},
-// 	"repo": {"$nmatch": "*maven"},
-// 	"$and": [
-//         {"name": {"$nmatch": "*.xml*"}},
-//         {"name": {"$nmatch": "*.pom*"}},
-//         {"name": {"$nmatch": "*.snapshot*"}}
-// 	]
-//     }).include("repo", "path", "name", "created", "type", "property")`, pattern)
-// 	return query
-// }
-
-// parseInputLine parses a line in the format "name:X version:Y" and returns the name and version.
-func parseInputLine(line string) (name, version string, ok bool) {
-	for _, part := range strings.Fields(line) {
-		kv := strings.SplitN(part, ":", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		switch strings.ToLower(kv[0]) {
-		case "name":
-			name = kv[1]
-		case "version":
-			version = kv[1]
-		}
-	}
-	ok = name != ""
-	return
-}
-
-func constructAQLQuery(name, version string) string {
-	namePattern := name + "*"
-	if version != "" {
-		namePattern = name + "*" + version + "*"
-	}
-	query := fmt.Sprintf(`items.find({
-    "type": "file",
-    "name": {"$match": "%s"},
-	"$and": [
-        {"name": {"$nmatch": "*.xml*"}},
-        {"name": {"$nmatch": "*.snapshot*"}},
-		{"name": {"$nmatch": "*.ci.sig*"}}
-	]
-    }).include("repo", "path", "name", "created", "type", "property")`, namePattern)
-	return query
-}
-
-// constructDockerAQLQuery builds an AQL query for Docker images stored in Artifactory.
-// Docker images are stored as manifest.json files under a path of <image>/<tag>/.
-func constructDockerAQLQuery(imageName, tag string) string {
-	var pathPattern string
-	if tag != "" {
-		pathPattern = imageName + "/" + tag
-	} else {
-		pathPattern = imageName + "/*"
-	}
-	query := fmt.Sprintf(`items.find({
-    "type": "file",
-    "name": "manifest.json",
-    "path": {"$match": "*/%s"}
-    }).include("repo", "path", "name", "created", "type", "property")`, pathPattern)
-	return query
-}
-
-// fetchArtifacts sends an AQL query to Artifactory and returns the found artifacts
-func fetchArtifacts(client HTTPClient, query string) (AppDetails, error) {
-	return executeHTTPRequest(query, artifactoryURL, token, client)
-}
-
-func executeHTTPRequest(query, url, token string, client HTTPClient) (AppDetails, error) {
-	//fmt.Println(query)
-	payload := strings.NewReader(query)
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/artifactory/api/search/aql", url), payload)
-	if err != nil {
-		return AppDetails{}, err
-	}
-
-	//req.Header.Set("X-JFrog-Art-Api", token)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "text/plain")
-
-	var resp *http.Response
-	for i := 0; i < 3; i++ {
-		resp, err = client.Do(req)
-		if err != nil {
-			fmt.Printf("Error %v\n", err)
-			continue
-		} else if err == nil {
-			break
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			time.Sleep(time.Millisecond * 500)
-		}
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	fmt.Println(string(body))
-	if err != nil {
-		return AppDetails{}, err
-	}
-
-	if len(body) == 0 {
-		return AppDetails{}, nil
-	}
-
-	var result AppDetails
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		return AppDetails{}, err
-	}
-	return result, nil
-}
+Alert on abnormal failure rates (>10%)
+Weekly summary report generation
