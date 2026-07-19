@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Splunk Telemetry Acceptance Criteria Assessment</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #5f6f7c;
+      --navy: #102a43;
+      --blue: #1668a8;
+      --blue-soft: #eaf4fb;
+      --green: #18774b;
+      --green-soft: #eaf7ef;
+      --amber: #946000;
+      --amber-soft: #fff6df;
+      --red: #aa3838;
+      --red-soft: #fceded;
+      --line: #d9e2e8;
+      --paper: #fff;
+      --wash: #f3f6f8;
+      --shadow: 0 14px 42px rgba(16, 42, 67, .09);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--wash);
+      font: 16px/1.62 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .hero {
+      padding: 66px 24px 58px;
+      color: white;
+      background: linear-gradient(135deg, #321b43 0%, #183e62 52%, #1668a8 100%);
+    }
+    .hero-inner, .layout, footer { max-width: 1180px; margin: auto; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-weight: 800; font-size: .76rem; opacity: .76; }
+    h1 { max-width: 900px; margin: 12px 0 16px; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1.06; letter-spacing: -.045em; }
+    .lede { max-width: 900px; margin: 0; color: #dcebf6; font-size: 1.16rem; }
+    .status {
+      display: inline-flex; align-items: center; gap: 10px; margin-top: 27px; padding: 10px 15px;
+      border: 1px solid rgba(255,255,255,.27); border-radius: 999px; background: rgba(255,255,255,.1); font-weight: 750;
+    }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ffd166; box-shadow: 0 0 0 5px rgba(255,209,102,.16); }
+    .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 34px; padding: 38px 24px 72px; }
+    nav { position: sticky; top: 20px; align-self: start; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow); }
+    nav strong { display: block; margin-bottom: 8px; color: var(--navy); }
+    nav a { display: block; padding: 7px 9px; border-radius: 7px; color: var(--muted); text-decoration: none; font-size: .91rem; }
+    nav a:hover { color: var(--blue); background: var(--blue-soft); }
+    main { min-width: 0; }
+    section { margin-bottom: 34px; padding: 30px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); }
+    h2 { margin: 0 0 14px; color: var(--navy); font-size: 1.65rem; letter-spacing: -.025em; }
+    h3 { margin: 25px 0 8px; color: var(--navy); font-size: 1.08rem; }
+    p { margin: 10px 0; }
+    ul, ol { padding-left: 1.25rem; }
+    li + li { margin-top: 7px; }
+    .verdict { border-left: 6px solid var(--amber); background: linear-gradient(90deg, var(--amber-soft), white 38%); }
+    .verdict strong { color: var(--amber); }
+    .callout { margin: 19px 0; padding: 16px 18px; border-left: 4px solid var(--blue); border-radius: 10px; background: var(--blue-soft); }
+    .callout.warning { border-color: var(--amber); background: var(--amber-soft); }
+    .callout.warning strong { color: var(--amber); }
+    .table-wrap { overflow-x: auto; margin: 18px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+    th { color: white; background: var(--navy); text-align: left; }
+    th, td { padding: 12px 13px; border: 1px solid var(--line); vertical-align: top; }
+    tbody tr:nth-child(even) { background: #f8fafb; }
+    .partial { color: var(--amber); font-weight: 800; }
+    .missing { color: var(--red); font-weight: 800; }
+    .covered { color: var(--green); font-weight: 800; }
+    .numbered { display: grid; grid-template-columns: 42px 1fr; gap: 12px; margin-top: 24px; }
+    .number { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: var(--blue); color: white; font-weight: 850; }
+    .numbered h3 { margin: 2px 0 7px; }
+    pre { overflow: auto; margin: 17px 0; padding: 19px; border-radius: 12px; background: #111d29; color: #dcebf6; font-size: .86rem; line-height: 1.55; }
+    blockquote { margin: 18px 0; padding: 13px 18px; border-left: 4px solid var(--green); background: var(--green-soft); color: #185538; }
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 18px; }
+    .metric-card { padding: 19px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfd; }
+    .metric-card b { display: block; margin-bottom: 8px; color: var(--blue); }
+    .metric-card ul { margin: 0; }
+    .flow { display: grid; gap: 10px; margin: 20px 0; }
+    .flow-row { display: grid; grid-template-columns: 215px 38px 1fr; align-items: center; }
+    .flow-source, .flow-events { padding: 14px 16px; border: 1px solid #a7c7dc; border-radius: 10px; background: var(--blue-soft); }
+    .flow-source { color: var(--navy); font-weight: 800; }
+    .flow-events { color: var(--muted); font-size: .91rem; }
+    .arrow { text-align: center; color: var(--blue); font-size: 1.35rem; font-weight: 900; }
+    .destination { margin-top: 13px; padding: 19px; border: 1px solid #9ac9aa; border-radius: 12px; background: var(--green-soft); text-align: center; color: var(--green); font-weight: 850; }
+    .score-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; margin-top: 20px; }
+    .score { padding: 17px; border: 1px solid var(--line); border-radius: 11px; background: #fbfcfd; }
+    .score b { display: block; color: var(--navy); }
+    .score span { color: var(--muted); }
+    footer { padding: 0 24px 42px; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 850px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; }
+      .metric-grid, .score-grid { grid-template-columns: 1fr; }
+      .flow-row { grid-template-columns: 1fr; gap: 6px; }
+      .arrow { transform: rotate(90deg); }
+      section { padding: 22px; }
+    }
+    @media print {
+      body { background: white; }
+      .hero { padding: 36px 0; }
+      .layout { display: block; padding: 24px 0; }
+      nav { display: none; }
+      section { break-inside: avoid; box-shadow: none; }
+      footer { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Acceptance criteria gap analysis · RECORE.third-party</div>
+      <h1>Splunk telemetry proposal assessment</h1>
+      <p class="lede">Evaluation of the proposed hybrid telemetry architecture against the required whitelisting, ingestion, approval, security, operational, and compliance reporting capabilities.</p>
+      <div class="status"><span class="status-dot"></span> Current proposal coverage: approximately 65–70%</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Report sections">
+      <strong>Contents</strong>
+      <a href="#verdict">Verdict</a>
+      <a href="#coverage">Coverage assessment</a>
+      <a href="#gaps">Required additions</a>
+      <a href="#metrics">Metrics feasibility</a>
+      <a href="#timing">Time-to-approval</a>
+      <a href="#failures">Failure taxonomy</a>
+      <a href="#dashboards">Dashboard readiness</a>
+      <a href="#recommendation">Revised recommendation</a>
+    </nav>
+
+    <main>
+      <section id="verdict" class="verdict">
+        <h2>Verdict</h2>
+        <p><strong>No—the last proposal provides the right overall architecture, but as currently written it would not satisfy all acceptance criteria.</strong> It covers most final catalog and workflow-completion outcomes, but additional event sources, timestamps, and event types are required.</p>
+        <p>The hybrid approach should remain, because neither catalog history nor GitHub Actions telemetry can meet the requirements independently.</p>
+      </section>
+
+      <section id="coverage">
+        <h2>Coverage assessment</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Requirement</th><th>Current proposal</th><th>What is missing</th></tr></thead>
+            <tbody>
+              <tr><td>Whitelist request initiated</td><td class="partial">Partial</td><td>Must emit from IssueOps/config request processing, not the catalog.</td></tr>
+              <tr><td>Whitelist approved/rejected</td><td class="partial">Partial</td><td>Need an explicit business decision event and rejection reason.</td></tr>
+              <tr><td>Whitelist expiration/renewal</td><td class="missing">Missing</td><td>Need lifecycle events and an authoritative expiration field.</td></tr>
+              <tr><td>Image ingestion attempt</td><td class="partial">Partial</td><td>Requires a start/attempt event, not only <code>workflow_run: completed</code>.</td></tr>
+              <tr><td>Image validation pass/fail</td><td class="partial">Partial</td><td>Must normalize validation results and failure reasons.</td></tr>
+              <tr><td>Vulnerability scan initiated</td><td class="missing">Missing</td><td>Requires a scan-start event inside the pipeline or scanner wrapper.</td></tr>
+              <tr><td>Scan completed with severity levels</td><td class="covered">Covered conceptually</td><td>Catalog extraction can supply completed results, but only if every failed scan writes results.</td></tr>
+              <tr><td>Approval workflow triggered</td><td class="partial">Partial</td><td>Workflow dispatch/start event must be captured.</td></tr>
+              <tr><td>Image approved/rejected with reason</td><td class="partial">Partial</td><td>Outcome and normalized reason taxonomy are required.</td></tr>
+              <tr><td>New release detected</td><td class="covered">Covered conceptually</td><td>Existing <code>release_added</code> can support this.</td></tr>
+              <tr><td>Counts and trends</td><td class="partial">Mostly covered</td><td>Requires precise definitions and current-state calculations.</td></tr>
+              <tr><td>Ingestion failure rate/reasons</td><td class="partial">Missing/partial</td><td>Catalog cannot see failures that never reach it.</td></tr>
+              <tr><td>Time-to-approval P50/P95/P99</td><td class="missing">Missing</td><td>Requires correlated request, approval, and publication timestamps.</td></tr>
+              <tr><td>Vendor/registry distribution</td><td class="covered">Covered</td><td>Vendor exists; source registry may need a separate normalized field.</td></tr>
+              <tr><td>Four dashboards</td><td class="missing">Not implemented</td><td>The proposal defines feeds, not actual Splunk dashboards or searches.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="gaps">
+        <h2>Most important gaps</h2>
+
+        <div class="numbered"><div class="number">1</div><div>
+          <h3>Request events need a third event source</h3>
+          <p>The proposed design has two sources: GitHub workflow telemetry and catalog changes. The acceptance criteria require a third logical source: request/IssueOps events.</p>
+          <p>The catalog cannot report rejected requests that never produce an entry. A workflow-completion event can say a workflow failed, but it cannot reliably say whether the business request was rejected, validation failed, the image was past EOL, or infrastructure failed.</p>
+          <p>Add a request-event producer to <code>image-request-ops.yml</code> for:</p>
+          <ul><li><code>whitelist_request_initiated</code></li><li><code>whitelist_request_validated</code></li><li><code>whitelist_request_rejected</code></li><li><code>approval_workflow_triggered</code></li></ul>
+          <p>This can use the common Splunk sender action without spreading telemetry throughout every vendor lifecycle.</p>
+        </div></div>
+
+        <div class="numbered"><div class="number">2</div><div>
+          <h3><code>workflow_run: completed</code> is insufficient for start events</h3>
+          <p>The centralized completion collector covers pipeline results, but not ingestion attempt time, approval workflow trigger time, scan initiation time, or precise stage duration.</p>
+          <p>Use GitHub webhooks for requested, in-progress, and completed workflow activity, or combine a centralized completion collector with explicit start events at the few meaningful business stages.</p>
+          <div class="callout"><b>Practical solution:</b> use a GitHub webhook/collector for workflow start and completion, a RequestOps event for request initiation, a scanner wrapper/composite for scan start and completion, and the catalog exporter for authoritative final outcomes.</div>
+        </div></div>
+
+        <div class="numbered"><div class="number">3</div><div>
+          <h3>Scan failures may never appear in the catalog</h3>
+          <p>Catalog extraction works when a scan result is written as <code>inactive</code>, but not necessarily when scanner setup fails, Aqua is unavailable, the image cannot be pulled, validation fails before scanning, the runner terminates, or catalog consolidation fails.</p>
+          <p>Required scan events:</p>
+          <pre><code>vulnerability_scan_initiated
+vulnerability_scan_completed
+vulnerability_scan_failed</code></pre>
+          <p>The completed event should include critical, high, medium, and low counts; total vulnerabilities; policy gate; report URL; scanner result; artifact identity and digest; scan duration; and suppression status.</p>
+        </div></div>
+
+        <div class="numbered"><div class="number">4</div><div>
+          <h3>Approval and publication must be distinguished</h3>
+          <p>The acceptance criteria use “approved,” “whitelisted,” and “ingested.” These should not be treated as synonyms.</p>
+          <pre><code>requested
+request_validated
+ingestion_started
+image_validated
+scan_started
+scan_completed
+policy_approved
+policy_rejected
+publication_started
+published
+cataloged
+whitelist_expired
+whitelist_renewed</code></pre>
+          <p>For example, a security scan may be approved but the Artifactory push may fail. Reporting that image as whitelisted would be incorrect.</p>
+          <blockquote>An image is whitelisted only when its catalog status is <code>active</code> or <code>suppressed</code>, it has an Artifactory destination, and catalog publication has completed.</blockquote>
+        </div></div>
+
+        <div class="numbered"><div class="number">5</div><div>
+          <h3>Expiration and renewal require a data-model decision</h3>
+          <p>The existing catalog has concepts such as <code>sunset_date</code> and suppression expiry, but those do not necessarily mean whitelist expiration.</p>
+          <p>The team must define whether every whitelist has an expiry date, whether vendor EOL is the whitelist expiration, whether suppression expiration is separate, and what constitutes renewal.</p>
+          <pre><code>{
+  "whitelist_status": "active",
+  "whitelist_effective_at": "2026-07-19T12:00:00Z",
+  "whitelist_expires_at": "2027-07-19T12:00:00Z",
+  "renewal_number": 1,
+  "renewal_reason": "annual-review"
+}</code></pre>
+          <p>Then emit <code>whitelist_expiration_scheduled</code>, <code>whitelist_expired</code>, <code>whitelist_renewal_requested</code>, and <code>whitelist_renewed</code>. Without an authoritative expiration field, the compliance dashboard cannot be accurate.</p>
+        </div></div>
+      </section>
+
+      <section id="metrics">
+        <h2>Metrics feasibility</h2>
+        <div class="metric-grid">
+          <div class="metric-card"><b>Fully feasible with the catalog exporter</b><ul><li>Total currently whitelisted</li><li>Weekly/monthly whitelisting trends</li><li>New releases detected</li><li>Vulnerability severity distribution and trends</li><li>Vendor distribution</li><li>Images requiring remediation</li><li>Historical catalog changes</li><li>Policy-gate tracking</li></ul></div>
+          <div class="metric-card"><b>Requires request and pipeline events</b><ul><li>Approved versus rejected rate</li><li>Ingestion failure count and percentage</li><li>Failure-reason categories</li><li>Pipeline success/failure rate</li><li>Time-to-approval percentiles</li><li>Complete lifecycle timeline</li><li>Requests rejected before catalog publication</li></ul></div>
+        </div>
+      </section>
+
+      <section id="timing">
+        <h2>Time-to-approval calculation</h2>
+        <p>Capture at least the following timestamps:</p>
+        <pre><code>request_initiated_at
+approval_workflow_triggered_at
+policy_decision_at
+published_at
+cataloged_at</code></pre>
+        <p>Define the primary approval metric explicitly:</p>
+        <pre><code>time_to_approval = policy_decision_at - request_initiated_at</code></pre>
+        <p>A separate metric should measure end-to-end delivery:</p>
+        <pre><code>time_to_whitelist = cataloged_at - request_initiated_at</code></pre>
+        <p>Splunk can calculate average, P50, P95, and P99 only when events share a durable correlation key such as <code>request_id + artifact identity + requested version</code>. A GitHub run ID alone is inadequate because request processing and vendor lifecycle execution can use different runs.</p>
+      </section>
+
+      <section id="failures">
+        <h2>Failure reason taxonomy</h2>
+        <p>Free-form error messages will make dashboards unreliable. Add normalized categories and preserve a sanitized <code>reason_detail</code> alongside <code>reason_category</code>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Stage</th><th>Suggested categories</th></tr></thead>
+            <tbody>
+              <tr><td>Request and source</td><td><code>invalid_request</code>, <code>unsupported_registry</code>, <code>source_authentication_failed</code>, <code>image_not_found</code>, <code>image_pull_failed</code>, <code>digest_mismatch</code>, <code>past_eol</code></td></tr>
+              <tr><td>Validation and security</td><td><code>validation_failed</code>, <code>scan_infrastructure_failed</code>, <code>policy_gate_failed</code>, <code>critical_vulnerability</code>, <code>suppression_expired</code></td></tr>
+              <tr><td>Publication</td><td><code>artifactory_push_failed</code>, <code>signing_failed</code>, <code>catalog_update_failed</code></td></tr>
+              <tr><td>Execution</td><td><code>workflow_cancelled</code>, <code>runner_failure</code>, <code>unknown</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="dashboards">
+        <h2>Dashboard readiness</h2>
+        <p>The architecture can support all four dashboards after these additions, but the dashboards themselves still need Splunk SPL definitions and visual configuration.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Dashboard</th><th>Required data foundation</th></tr></thead>
+            <tbody>
+              <tr><td>Image Whitelisting Overview</td><td>Catalog outcomes plus request approval/rejection events and normalized vendor/registry.</td></tr>
+              <tr><td>Security &amp; Vulnerability Metrics</td><td>Scan-start, completion, failure and severity events plus actionable catalog status.</td></tr>
+              <tr><td>Operational Metrics</td><td>Workflow lifecycle events, correlated request timestamps, failure taxonomy and release detection.</td></tr>
+              <tr><td>Compliance &amp; Audit</td><td>Append-only lifecycle events, expiration/renewal data, historical decisions and policy violations.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warning"><strong>Compliance requirement:</strong> current-state catalog JSON alone is insufficient because later updates overwrite prior state. Catalog Git history can reconstruct changes, but exporting append-only lifecycle events to Splunk is more dependable for audit reporting.</div>
+      </section>
+
+      <section id="recommendation">
+        <h2>Revised recommendation</h2>
+        <p>Keep the hybrid proposal, expanded to four collection points:</p>
+        <div class="flow">
+          <div class="flow-row"><div class="flow-source">IssueOps/request events</div><div class="arrow">→</div><div class="flow-events">Request initiated, validation, and early rejection</div></div>
+          <div class="flow-row"><div class="flow-source">GitHub workflow events</div><div class="arrow">→</div><div class="flow-events">Workflow triggered, started, completed, and cancelled</div></div>
+          <div class="flow-row"><div class="flow-source">Scan/pipeline events</div><div class="arrow">→</div><div class="flow-events">Ingestion attempt, validation, scan initiated, completed, or failed</div></div>
+          <div class="flow-row"><div class="flow-source">Catalog change events</div><div class="arrow">→</div><div class="flow-events">Approved final state, published, expired, renewed, removed, or restored</div></div>
+        </div>
+        <div class="destination">Splunk HEC → Operational + Security + Audit dashboards</div>
+        <p>The common composite action is appropriate as the secure Splunk transport used at these controlled collection points. It should implement batching, retries, schema validation, secret handling, and non-blocking delivery. It should not be copied after every job.</p>
+        <div class="score-grid">
+          <div class="score"><b>Architecture direction</b><span>Correct</span></div>
+          <div class="score"><b>Existing proposal coverage</b><span>Approximately 65–70%</span></div>
+          <div class="score"><b>Coverage after additions</b><span>All listed criteria are achievable</span></div>
+          <div class="score"><b>Largest unresolved item</b><span>Formal meaning and storage of whitelist expiration/renewal</span></div>
+        </div>
+        <div class="callout warning"><strong>Largest implementation risk:</strong> deriving business outcomes from GitHub workflow conclusions instead of authoritative request and catalog events.</div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    This assessment supplements the original Splunk event-reporting proposal. It is a separate, self-contained document and does not modify or replace the original proposal.
+  </footer>
+</body>
+</html>

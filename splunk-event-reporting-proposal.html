@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Splunk Event Reporting Proposal — RECORE Third-Party Automation</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #16202a;
+      --muted: #5c6b78;
+      --line: #dbe3e8;
+      --paper: #ffffff;
+      --wash: #f4f7f9;
+      --navy: #102a43;
+      --blue: #1769aa;
+      --blue-soft: #eaf4fb;
+      --green: #16794a;
+      --green-soft: #e9f7ef;
+      --amber: #9a6100;
+      --amber-soft: #fff6df;
+      --red: #a33636;
+      --shadow: 0 14px 40px rgba(16, 42, 67, .09);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--wash);
+      color: var(--ink);
+      font: 16px/1.62 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .hero {
+      background: linear-gradient(135deg, #0b2239 0%, #123f62 60%, #1769aa 100%);
+      color: white;
+      padding: 64px 24px 58px;
+    }
+    .hero-inner, .layout, footer { max-width: 1180px; margin: auto; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .76rem; font-weight: 800; opacity: .76; }
+    h1 { max-width: 870px; margin: 12px 0 16px; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1.06; letter-spacing: -.045em; }
+    .lede { max-width: 810px; margin: 0; font-size: 1.15rem; color: #d9ebf7; }
+    .verdict {
+      display: inline-flex; align-items: center; gap: 10px; margin-top: 28px; padding: 10px 14px;
+      border: 1px solid rgba(255,255,255,.25); border-radius: 999px; background: rgba(255,255,255,.10);
+      font-weight: 750;
+    }
+    .verdict-dot { width: 10px; height: 10px; border-radius: 50%; background: #66dfa4; box-shadow: 0 0 0 5px rgba(102,223,164,.16); }
+
+    .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 34px; padding: 38px 24px 70px; }
+    nav { position: sticky; top: 20px; align-self: start; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow); }
+    nav strong { display: block; margin-bottom: 8px; color: var(--navy); }
+    nav a { display: block; padding: 7px 9px; border-radius: 7px; color: var(--muted); text-decoration: none; font-size: .92rem; }
+    nav a:hover { color: var(--blue); background: var(--blue-soft); }
+    main { min-width: 0; }
+    section { margin-bottom: 34px; padding: 30px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); }
+    h2 { margin: 0 0 14px; color: var(--navy); font-size: 1.65rem; letter-spacing: -.025em; }
+    h3 { margin: 25px 0 8px; color: var(--navy); font-size: 1.08rem; }
+    p { margin: 10px 0; }
+    ul, ol { padding-left: 1.25rem; }
+    li + li { margin-top: 7px; }
+
+    .summary { border-left: 6px solid var(--green); background: linear-gradient(90deg, var(--green-soft), white 35%); }
+    .summary strong { color: var(--green); }
+    .callout { margin: 20px 0; padding: 16px 18px; border-radius: 10px; border-left: 4px solid var(--amber); background: var(--amber-soft); }
+    .callout strong { color: var(--amber); }
+
+    .truth-grid, .event-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+    .truth-card, .event-card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfd; }
+    .truth-card b, .event-card b { display: block; margin-bottom: 6px; color: var(--blue); }
+    .truth-card p, .event-card p { margin: 0; color: var(--muted); font-size: .92rem; }
+
+    .table-wrap { overflow-x: auto; margin: 18px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .94rem; }
+    th { background: var(--navy); color: white; text-align: left; }
+    th, td { padding: 12px 13px; border: 1px solid var(--line); vertical-align: top; }
+    tbody tr:nth-child(even) { background: #f8fafb; }
+    .recommended { color: var(--green); font-weight: 800; }
+
+    .architecture { margin: 24px 0; display: grid; grid-template-columns: 1fr 58px 1fr 58px 1fr; align-items: stretch; }
+    .node { padding: 20px; border-radius: 13px; border: 1px solid #a9c8dc; background: var(--blue-soft); }
+    .node.final { border-color: #9ccaaa; background: var(--green-soft); }
+    .node b { display: block; margin-bottom: 5px; color: var(--navy); }
+    .node span { color: var(--muted); font-size: .9rem; }
+    .arrow { display: grid; place-items: center; color: var(--blue); font-size: 1.8rem; font-weight: 800; }
+    .branch { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+    .branch .node { background: #fbfcfd; }
+
+    .finding { display: grid; grid-template-columns: 38px 1fr; gap: 10px; margin: 15px 0; }
+    .finding-num { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--red); font-weight: 800; font-size: .84rem; }
+    .finding p { margin: 0; }
+    .finding code { color: #7e2930; background: #faeef0; padding: 2px 5px; border-radius: 4px; }
+
+    pre { overflow: auto; margin: 18px 0 0; padding: 20px; border-radius: 12px; background: #111d29; color: #dcebf6; font-size: .86rem; line-height: 1.55; }
+    .phase { display: grid; grid-template-columns: 70px 1fr; gap: 14px; padding: 15px 0; border-top: 1px solid var(--line); }
+    .phase:first-of-type { border-top: 0; }
+    .phase-label { color: var(--blue); font-weight: 850; }
+    .phase p { margin: 0; }
+
+    footer { padding: 0 24px 42px; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 850px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; }
+      .truth-grid, .event-grid { grid-template-columns: 1fr; }
+      .architecture { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); min-height: 45px; }
+      .branch { grid-template-columns: 1fr; }
+      section { padding: 22px; }
+    }
+    @media print {
+      body { background: white; }
+      .hero { padding: 35px 0; }
+      .layout { display: block; padding: 24px 0; }
+      nav { display: none; }
+      section { break-inside: avoid; box-shadow: none; }
+      footer { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Architecture recommendation · RECORE.third-party</div>
+      <h1>GitHub Actions events and Splunk reporting</h1>
+      <p class="lede">A proposed design for reporting operational workflow health and authoritative third-party artifact outcomes without coupling Splunk availability to the scan-and-publish pipeline.</p>
+      <div class="verdict"><span class="verdict-dot"></span> Recommended: catalog outcomes + centralized Actions collector</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Report sections">
+      <strong>Contents</strong>
+      <a href="#decision">Executive decision</a>
+      <a href="#context">What the code shows</a>
+      <a href="#comparison">Options compared</a>
+      <a href="#gaps">Existing metrics gaps</a>
+      <a href="#design">Proposed architecture</a>
+      <a href="#schema">Event contract</a>
+      <a href="#security">Security & reliability</a>
+      <a href="#rollout">Rollout plan</a>
+    </nav>
+
+    <main>
+      <section id="decision" class="summary">
+        <h2>Executive decision</h2>
+        <p><strong>Use the catalog as the primary source for business and compliance reports, and add one centralized GitHub Actions collector for operational reports.</strong></p>
+        <p>Do not add a Splunk composite action throughout every lifecycle workflow. A composite action may be useful as the shared HTTP Event Collector (HEC) client used by the two centralized exporters, but it should not define event semantics or be manually embedded in every scan, publish, and catalog job.</p>
+      </section>
+
+      <section id="context">
+        <h2>What the existing code shows</h2>
+        <p>The platform has three different records of truth. They answer different reporting questions and should not be collapsed into a single workflow conclusion.</p>
+        <div class="truth-grid">
+          <div class="truth-card"><b>GitHub Actions</b><p>Did the workflow run, fail, cancel, retry, or exceed its expected duration?</p></div>
+          <div class="truth-card"><b>Aqua and lifecycle jobs</b><p>What was scanned, what vulnerabilities were found, and did the immediate policy gate pass?</p></div>
+          <div class="truth-card"><b>Third-party catalog</b><p>Was the artifact actually published, scan-gated, suppressed, made inactive, or omitted?</p></div>
+        </div>
+        <div class="callout"><strong>Key behavior:</strong> the image request workflow deliberately checks the catalog after the lifecycle run. It does not trust a green workflow conclusion because an EOL block, partial batch, or scan-gated artifact may still produce successful jobs.</div>
+        <p>The production flow spans vendor-specific image lifecycles, libraries, Helm charts, Windows packages, recurring scans, Artifactory promotion, signing, and catalog consolidation. The workflows do not share one uniform job graph, so per-workflow telemetry steps would create substantial maintenance and consistency risk.</p>
+      </section>
+
+      <section id="comparison">
+        <h2>Options compared</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Option</th><th>Strengths</th><th>Limitations</th><th>Assessment</th></tr></thead>
+            <tbody>
+              <tr><td>Composite action in lifecycle workflows</td><td>Immediate delivery and direct access to workflow context.</td><td>Must be inserted across heterogeneous workflows; may never run after cancellation or runner loss; requires each workflow to normalize matrix and partial outcomes.</td><td>Use only as a reusable HEC transport helper.</td></tr>
+              <tr><td>Catalog file extraction</td><td>Authoritative artifact outcome, rich scan metadata, Artifactory location, and historical backfill.</td><td>Cannot see attempts that never reached the catalog, queue time, failed jobs, or cancellations.</td><td>Primary business-event source.</td></tr>
+              <tr><td>Central <code>workflow_run</code> collector</td><td>Broad operational coverage with minimal changes to lifecycle workflows.</td><td>Workflow metadata alone cannot prove that each requested artifact was published.</td><td>Primary operational-event source.</td></tr>
+              <tr><td>GitHub webhook receiver</td><td>Independent of runners and capable of receiving lifecycle state transitions.</td><td>Requires an internal service or supported Splunk/GitHub integration.</td><td>Preferred operational collector when available.</td></tr>
+              <tr><td><span class="recommended">Hybrid</span></td><td>Combines operational health with the real per-artifact result.</td><td>Requires a shared correlation contract and two Splunk sourcetypes.</td><td><span class="recommended">Recommended</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="gaps">
+        <h2>Gaps in the existing catalog metrics pipeline</h2>
+        <p>The current <code>Catalog Metrics</code> workflow and Python extractor provide a useful foundation, but should be corrected before they become a production Splunk feed.</p>
+        <div class="finding"><span class="finding-num">1</span><p><b>The push trigger is attached to the automation repository.</b> Catalog changes happen in a separate repository, so ingestion is effectively scheduled or manual rather than event-driven by catalog updates.</p></div>
+        <div class="finding"><span class="finding-num">2</span><p><b>Every run reconstructs the full catalog history.</b> This grows continuously and will resend events unless Splunk delivery has durable checkpoints and deterministic IDs.</p></div>
+        <div class="finding"><span class="finding-num">3</span><p><b>Library results are omitted.</b> The extractor scans <code>containers</code>, <code>charts</code>, and <code>packages</code>, but not <code>vendor-catalog/library</code> for npm and PyPI.</p></div>
+        <div class="finding"><span class="finding-num">4</span><p><b>Removals and governance changes are missing.</b> Blackouts, restores, suppression changes, suppression expiry, and deleted releases are not emitted as events.</p></div>
+        <div class="finding"><span class="finding-num">5</span><p><b>Package rescan detection is incomplete.</b> Packages compare policy-gate changes but do not consistently emit a new scan that retains the same gate result.</p></div>
+        <div class="finding"><span class="finding-num">6</span><p><b>Run correlation is best-effort.</b> The extractor parses <code>run &lt;digits&gt;</code> from free-form commit subjects instead of consuming structured provenance.</p></div>
+        <div class="finding"><span class="finding-num">7</span><p><b>Event time is ambiguous.</b> Catalog commit time and scan time must be preserved separately as observation time and occurrence time.</p></div>
+      </section>
+
+      <section id="design">
+        <h2>Proposed architecture</h2>
+        <div class="architecture" aria-label="Recommended event architecture">
+          <div class="node"><b>GitHub Actions / GitHub webhook</b><span>Workflow conclusion, attempt, duration, actor, failed job and run URL</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>Central operational exporter</b><span>Filters production workflows, normalizes metadata, batches and retries HEC delivery</span></div>
+          <div class="arrow">→</div>
+          <div class="node final"><b>Splunk operational sourcetype</b><span>Reliability, failure rate, cancellation, duration, queue and retry reporting</span></div>
+        </div>
+        <div class="architecture" aria-label="Recommended catalog architecture">
+          <div class="node"><b>Catalog repository main branch</b><span>Authoritative JSON for containers, libraries, charts and packages</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>Incremental catalog exporter</b><span>Diffs the pushed commit range and emits idempotent per-artifact outcomes</span></div>
+          <div class="arrow">→</div>
+          <div class="node final"><b>Splunk artifact sourcetype</b><span>Published, gated, suppressed, blacked out, removed, restored and rescanned</span></div>
+        </div>
+
+        <h3>Catalog outcome exporter</h3>
+        <ul>
+          <li>Run from the catalog repository on changes to authoritative catalog paths.</li>
+          <li>Diff only the delivered commit range; use a scheduled reconciliation as recovery.</li>
+          <li>Normalize images, Helm charts, npm/PyPI libraries, and packages.</li>
+          <li>Require catalog status and Artifactory destination before reporting an artifact as published.</li>
+          <li>Send HEC batches with deterministic event IDs and retry transient errors.</li>
+        </ul>
+
+        <h3>Central Actions collector</h3>
+        <ul>
+          <li>Use one <code>workflow_run: completed</code> workflow scoped to production workflows, or an organization/repository webhook receiver.</li>
+          <li>Capture failures and cancellations that never produce catalog commits.</li>
+          <li>Query the Actions jobs API only when job-level failure and duration data are required.</li>
+          <li>Keep Splunk delivery failure non-blocking for artifact scanning and publication.</li>
+        </ul>
+
+        <h3>Suggested artifact events</h3>
+        <div class="event-grid">
+          <div class="event-card"><b>Onboarding</b><p>artifact_requested, artifact_discovered, artifact_published</p></div>
+          <div class="event-card"><b>Security</b><p>scan_completed, artifact_scan_gated, artifact_suppressed</p></div>
+          <div class="event-card"><b>Governance</b><p>artifact_blacked_out, artifact_removed, artifact_restored</p></div>
+        </div>
+      </section>
+
+      <section id="schema">
+        <h2>Shared event and correlation contract</h2>
+        <p>Both streams should share stable keys so Splunk can correlate a failed workflow with catalog outcomes from the same request. Structured provenance should replace parsing run IDs from commit subjects.</p>
+        <pre><code>{
+  "schema_version": "1.0",
+  "event_id": "sha256(source + event_type + natural_key + version)",
+  "source": "github_actions | third_party_catalog",
+  "event_type": "artifact_published",
+  "repository": "icesdlc/RECORE.third-party",
+  "workflow_name": "DockerHub Image Lifecycle",
+  "run_id": "123456",
+  "run_attempt": 1,
+  "request_issue": 1234,
+  "artifact_type": "image",
+  "vendor": "dockerhub",
+  "artifact": "library/nginx",
+  "version": "1.27.0",
+  "scan_gate": "pass",
+  "catalog_status": "active",
+  "publication_status": "published",
+  "artifactory_path": "base-docker-prod/...",
+  "occurred_at": "2026-07-19T17:14:00Z",
+  "observed_at": "2026-07-19T17:15:12Z"
+}</code></pre>
+      </section>
+
+      <section id="security">
+        <h2>Security and reliability requirements</h2>
+        <ul>
+          <li>Store the Splunk HEC token as an environment- or organization-scoped secret and mask it in all logs.</li>
+          <li>Allow only the internal Splunk endpoint and validate TLS; do not disable certificate verification.</li>
+          <li>Do not send credentials, raw issue bodies, full scan reports, or unrestricted workflow logs.</li>
+          <li>Apply payload size limits and batch events to reduce load on runners and HEC.</li>
+          <li>Use exponential backoff for retryable failures and deterministic IDs for safe replay.</li>
+          <li>Do not fail the scan, signing, promotion, or catalog workflow solely because Splunk is unavailable.</li>
+          <li>Alert separately when the exporter checkpoint falls behind the catalog or GitHub event stream.</li>
+        </ul>
+      </section>
+
+      <section id="rollout">
+        <h2>Recommended rollout</h2>
+        <div class="phase"><span class="phase-label">Phase 1</span><p>Agree on event semantics, required reports, Splunk index and sourcetypes, retention, and the correlation fields.</p></div>
+        <div class="phase"><span class="phase-label">Phase 2</span><p>Extend the existing extractor for incremental commit ranges, libraries, removals, blackout, suppression changes, and deterministic IDs.</p></div>
+        <div class="phase"><span class="phase-label">Phase 3</span><p>Deploy the catalog exporter in the catalog repository and validate against current catalog reports before enabling HEC delivery.</p></div>
+        <div class="phase"><span class="phase-label">Phase 4</span><p>Add the centralized Actions completion collector and correlate its run IDs with catalog event provenance.</p></div>
+        <div class="phase"><span class="phase-label">Phase 5</span><p>Perform one controlled historical backfill, then enable scheduled reconciliation and exporter-lag alerting.</p></div>
+        <div class="callout"><strong>Success criterion:</strong> Splunk should answer both “Did the automation run successfully?” and “What happened to each requested artifact?” without interpreting a green workflow as proof of publication.</div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    Prepared from a read-only review of the RECORE.third-party workflows, architecture documentation, request verification logic, and existing catalog metrics scripts. This document is self-contained and can be printed to PDF from the browser.
+  </footer>
+</body>
+</html>
