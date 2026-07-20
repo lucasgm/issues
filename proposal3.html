@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Write-Time vs Catalog-Diff Telemetry Assessment</title>
+  <style>
+    :root{color-scheme:light;--ink:#17212b;--muted:#5d6d79;--navy:#102a43;--blue:#1769aa;--green:#18784b;--amber:#956100;--red:#a63838;--line:#d9e2e8;--paper:#fff;--wash:#f3f6f8;--blue-soft:#eaf4fb;--green-soft:#eaf7ef;--amber-soft:#fff5dd;--red-soft:#fceded;--shadow:0 14px 42px rgba(16,42,67,.09)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--wash);font:16px/1.63 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--blue)}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}code{padding:2px 5px;border-radius:4px;background:#edf2f5;color:#7c2b38}
+    .hero{padding:66px 24px 58px;color:#fff;background:linear-gradient(135deg,#102a43,#1769aa 64%,#633e80 145%)}.hero-inner,.layout,footer{max-width:1220px;margin:auto}.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.76rem;font-weight:850;opacity:.77}.hero h1{max-width:980px;margin:12px 0 16px;font-size:clamp(2.3rem,5vw,4rem);line-height:1.06;letter-spacing:-.045em}.hero p{max-width:900px;margin:0;color:#e0eef7;font-size:1.16rem}.badge{display:inline-flex;align-items:center;gap:10px;margin-top:27px;padding:10px 15px;border:1px solid rgba(255,255,255,.27);border-radius:999px;background:rgba(255,255,255,.1);font-weight:780}.dot{width:10px;height:10px;border-radius:50%;background:#67dfa5;box-shadow:0 0 0 5px rgba(103,223,165,.16)}
+    .layout{display:grid;grid-template-columns:245px minmax(0,1fr);gap:34px;padding:38px 24px 72px}nav{position:sticky;top:20px;align-self:start;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--shadow)}nav strong{display:block;margin-bottom:8px;color:var(--navy)}nav a{display:block;padding:7px 9px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:.9rem}nav a:hover{color:var(--blue);background:var(--blue-soft)}main{min-width:0}section{margin-bottom:32px;padding:30px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:var(--shadow)}h2{margin:0 0 14px;color:var(--navy);font-size:1.7rem;letter-spacing:-.025em}h3{margin:25px 0 8px;color:var(--navy);font-size:1.1rem}p{margin:10px 0}ul,ol{padding-left:1.3rem}li+li{margin-top:7px}
+    .decision{border-left:6px solid var(--green);background:linear-gradient(90deg,var(--green-soft),#fff 42%)}.decision strong{color:var(--green)}.callout{margin:20px 0;padding:16px 18px;border-left:4px solid var(--amber);border-radius:10px;background:var(--amber-soft)}.callout strong{color:var(--amber)}.danger{margin:20px 0;padding:16px 18px;border-left:4px solid var(--red);border-radius:10px;background:var(--red-soft)}.danger strong{color:var(--red)}
+    .table-wrap{overflow-x:auto;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:.9rem}th{color:#fff;background:var(--navy);text-align:left}th,td{padding:11px 12px;border:1px solid var(--line);vertical-align:top}tbody tr:nth-child(even){background:#f8fafb}.best{color:var(--green);font-weight:850}.medium{color:var(--amber);font-weight:850}.high{color:var(--red);font-weight:850}
+    .flow{display:grid;grid-template-columns:1fr 45px 1fr 45px 1fr;align-items:stretch;margin:22px 0}.node{padding:18px;border:1px solid #a6c6da;border-radius:12px;background:var(--blue-soft)}.node.green{border-color:#9bc9aa;background:var(--green-soft)}.node b{display:block;margin-bottom:5px;color:var(--navy)}.node span{color:var(--muted);font-size:.89rem}.arrow{display:grid;place-items:center;color:var(--blue);font-size:1.45rem;font-weight:900}.four{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.card{padding:17px;border:1px solid var(--line);border-radius:11px;background:#fbfcfd}.card b{display:block;margin-bottom:5px;color:var(--blue)}.card span{color:var(--muted);font-size:.88rem}
+    pre{overflow:auto;margin:17px 0;padding:20px;border-radius:12px;background:#111d29;color:#dcebf6;font-size:.83rem;line-height:1.55}pre code{padding:0;color:inherit;background:transparent}.phase{display:grid;grid-template-columns:90px 1fr 105px;gap:15px;padding:17px 0;border-top:1px solid var(--line);align-items:start}.phase:first-of-type{border-top:0}.phase b{color:var(--blue)}.phase p{margin:0}.days{text-align:right;color:var(--muted);font-weight:750}blockquote{margin:20px 0 0;padding:20px 22px;border-left:5px solid var(--green);border-radius:10px;background:var(--green-soft);color:#185638;font-size:1.08rem;font-weight:760}footer{padding:0 24px 42px;color:var(--muted);font-size:.9rem}
+    @media(max-width:930px){.layout{grid-template-columns:1fr}nav{position:static}.four{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr}.arrow{min-height:42px;transform:rotate(90deg)}}@media(max-width:650px){.four{grid-template-columns:1fr}.phase{grid-template-columns:1fr}.days{text-align:left}section{padding:21px}}@media print{body{background:#fff}.hero{padding:35px 0}.layout{display:block;padding:24px 0}nav{display:none}section{box-shadow:none;break-inside:avoid}footer{padding:0}}
+  </style>
+</head>
+<body>
+  <header class="hero"><div class="hero-inner"><div class="eyebrow">Architecture comparison · RECORE third-party telemetry</div><h1>Write-time telemetry vs. live catalog commit diffing</h1><p>A detailed comparison of the original catalog-first hybrid and the proposed checkpoint-emission design, including corrections, implementation difficulty, file impact, and the recommended production architecture.</p><div class="badge"><span class="dot"></span> Better option: enhanced write-time hybrid</div></div></header>
+  <div class="layout">
+    <nav aria-label="Sections"><strong>Contents</strong><a href="#verdict">Verdict</a><a href="#comparison">Proposal comparison</a><a href="#evidence">Why write-time wins</a><a href="#catalog-json">Catalog JSON limitations</a><a href="#retention">40-day retention</a><a href="#scheduled">Scheduled runs</a><a href="#corrections">Required corrections</a><a href="#architecture">Recommended architecture</a><a href="#schema">Identity and schema</a><a href="#files">Files changed</a><a href="#difficulty">Difficulty and effort</a><a href="#rollout">Phased rollout</a><a href="#verification">Verification</a><a href="#final">Final decision</a></nav>
+    <main>
+      <section id="verdict" class="decision"><h2>Verdict</h2><p><strong>The write-time checkpoint proposal is the better live architecture for business telemetry.</strong> It has better request correlation, lower semantic ambiguity, lower latency, and avoids complex interpretation of catalog merge history. The original live catalog-diff exporter should be rejected as the primary real-time mechanism.</p><p>However, the proposed design is not complete as written. The production recommendation is an <strong>enhanced write-time hybrid</strong>:</p><ol><li>Emit domain events at existing authoritative workflow checkpoints.</li><li>Use one shared composite action only to validate and deliver event batches to Splunk HEC.</li><li>Add centralized GitHub workflow telemetry for failures and cancellations that never reach those checkpoints.</li><li>Use a periodic catalog snapshot reconciliation as a safety net.</li><li>Use catalog history extraction only for a controlled one-time backfill.</li></ol><p>This is an evolution of the hybrid recommendation: the catalog remains the authoritative final-state evidence, but live event creation happens where full context already exists.</p></section>
+
+      <section id="comparison"><h2>Side-by-side comparison</h2><div class="table-wrap"><table><thead><tr><th>Dimension</th><th>Live catalog commit-diff exporter</th><th>Write-time checkpoint emission</th><th>Assessment</th></tr></thead><tbody>
+        <tr><td>Request issue correlation</td><td>Absent from catalog history; requires a stateful run-ID lookup.</td><td>Available directly in IssueOps workflows.</td><td class="best">Write-time wins</td></tr>
+        <tr><td>Artifact identity</td><td>Must reconstruct identity from several non-uniform catalog shapes.</td><td>Already resolved at parsing, scan, publication, or verification checkpoint.</td><td class="best">Write-time wins</td></tr>
+        <tr><td>Final business state</td><td>Strong after interpreting the catalog change.</td><td>Strong when emitted from the existing post-run catalog verification or catalog-write result.</td><td>Comparable if checkpoints are correct</td></tr>
+        <tr><td>Merge/branch complexity</td><td>Must handle merge commits, tooling-only commits, consolidation, and filtering.</td><td>Does not interpret Git history live.</td><td class="best">Write-time wins</td></tr>
+        <tr><td>Out-of-band edits</td><td>Detected naturally if the diff logic is correct.</td><td>Missed unless reconciliation exists.</td><td>Catalog diff wins; snapshot closes gap</td></tr>
+        <tr><td>Changes required</td><td>Central exporter plus schema adapters; few workflow edits.</td><td>Multiple workflow edits across artifact types.</td><td class="medium">Write-time has larger change surface</td></tr>
+        <tr><td>Delivery reliability</td><td>Can retry asynchronously from a checkpoint.</td><td>Direct fail-soft HEC can lose events during outages.</td><td>Diff wins unless write-time has reconciliation/replay</td></tr>
+        <tr><td>Latency</td><td>After catalog merge and exporter trigger.</td><td>At the exact workflow checkpoint.</td><td class="best">Write-time wins</td></tr>
+        <tr><td>Pre-catalog rejection/failure</td><td>Invisible.</td><td>Visible from request and scan checkpoints.</td><td class="best">Write-time wins</td></tr>
+        <tr><td>Operational failure/cancellation</td><td>Invisible.</td><td>Still incomplete unless a centralized workflow collector is added.</td><td>Requires hybrid collector</td></tr>
+        <tr><td>One-time history</td><td>Well suited to backfill.</td><td>Cannot reconstruct the past.</td><td>Use existing extractor for backfill</td></tr>
+      </tbody></table></div></section>
+
+      <section id="evidence"><h2>Why write-time emission is better here</h2><h3>1. The workflow already derives the business payload</h3><p>The image request workflow’s catalog-verification loop already resolves each requested image, normalized tag, catalog status, Artifactory path, and security-report link, then classifies the item as published, scan-gated, EOL, or not cataloged. That is exactly the information needed for an artifact outcome event.</p><p>The Windows request workflow has a similar post-run catalog lookup and checks both workflow conclusion and catalog state before it closes the issue. Helm downloads per-chart status artifacts and derives an individual result and reason. These are stronger semantic checkpoints than reconstructing intent from a later catalog commit.</p><h3>2. Correlation exists before catalog persistence</h3><p>IssueOps knows the issue number, request item, vendor, requested reference, dispatch run ID, and requester context. Those values do not reliably exist in catalog Git history. Capturing them at request time avoids an Actions API history lookup and avoids maintaining a run-ID-to-issue database.</p><h3>3. Catalog history contains transport and tooling behavior</h3><p>Catalog Git history records how automation merges and maintains files, not only business transitions. Merge commits and periodic metric-report commits are legitimate repository activity but introduce noise for a live event interpreter.</p><h3>4. It matches the acceptance criteria</h3><p>Request initiation, early validation failure, scan initiation, scan failure, and time-to-approval cannot be derived from a final catalog change. Write-time producers can emit those events at their authoritative boundaries.</p></section>
+
+      <section id="catalog-json"><h2>Why catalog JSON files are not a good primary telemetry source</h2><p>The catalog is valuable and should remain part of the design, but it solves a different problem. Catalog JSON represents the latest known artifact state. Telemetry represents events that occurred over time. Treating the files themselves as the event stream creates several correctness problems.</p>
+        <h3>1. Current state is not event history</h3><p>When a catalog entry changes from <code>inactive</code> to <code>active</code>, the JSON normally retains the new state. It does not inherently preserve a first-class event saying who changed it, why it changed, which request caused it, how long approval took, or what the previous state meant. Git can sometimes reconstruct the difference, but that is repository history reconstruction—not an explicit business event contract.</p>
+        <h3>2. Reposting complete files creates duplicate observations</h3><p>If a complete provider JSON file is sent whenever one artifact changes, every unchanged artifact in that file is sent again. Splunk then sees repeated observations that can be mistaken for new whitelists, scans, or approvals. Dashboards must perform expensive latest-record deduplication, and a small error in that logic inflates cumulative and time-series counts.</p>
+        <h3>3. Catalog persistence excludes unsuccessful attempts</h3><p>Invalid requests, source authentication failures, pull errors, scanner outages, cancelled workflows, and other pre-catalog failures may produce no catalog record at all. A catalog-only feed therefore has an incomplete denominator for approval rate, ingestion failure rate, and pipeline success rate.</p>
+        <h3>4. Request correlation is incomplete</h3><p>The catalog generally knows the artifact and the workflow run that wrote it, but not necessarily the originating issue or request item. A single issue can request multiple artifacts, and scheduled discovery may have no issue. Reconstructing issue correlation later requires API lookups and state that the catalog does not own.</p>
+        <h3>5. The JSON shapes are intentionally different</h3><p>Containers and libraries are nested differently, packages have flat release structures, and Helm includes chart and nested-image information. Fields such as digest, sunset date, malware result, suppression details, and Artifactory path are not uniformly available. Sending raw files pushes this schema complexity into every Splunk search.</p>
+        <h3>6. Git history contains implementation noise</h3><p>Merge commits, branch consolidation, generated metrics commits, formatting-only changes, and derived-file updates are repository operations rather than business outcomes. A live diff engine must distinguish semantic artifact transitions from those implementation details.</p>
+        <h3>7. Deletion and absence are ambiguous</h3><p>An artifact missing from a new file might represent an intentional removal, blackout, schema migration, merge conflict, generated-file replacement, or processing error. A write-time <code>artifact_removed</code> or <code>artifact_blacked_out</code> event can state the reason explicitly.</p>
+        <h3>8. Full catalog payloads are larger than normalized events</h3><p>Provider files may repeat large vulnerability summaries and metadata for many releases. Normalized change events send only the affected artifact and fields, reducing HEC volume and improving field consistency.</p>
+        <div class="callout"><strong>Correct role for catalog JSON:</strong> use it as authoritative evidence of final/current state, for scheduled reconciliation, current inventory validation, and one-time historical reconstruction. Do not use repeated raw catalog files as the primary live business-event feed.</div>
+        <div class="table-wrap"><table><thead><tr><th>Use case</th><th>Catalog JSON suitability</th><th>Recommended method</th></tr></thead><tbody>
+          <tr><td>Current whitelisted inventory</td><td class="best">Excellent</td><td>Periodic normalized snapshot or lookup</td></tr>
+          <tr><td>Confirm final publication state</td><td class="best">Excellent</td><td>Status plus Artifactory destination</td></tr>
+          <tr><td>Reconcile missing live events</td><td class="best">Good</td><td>Scheduled normalized snapshot comparison</td></tr>
+          <tr><td>One-time historical bootstrap</td><td class="medium">Usable with caveats</td><td>Controlled Git-history backfill</td></tr>
+          <tr><td>Request initiation and rejection</td><td class="high">Poor</td><td>IssueOps write-time event</td></tr>
+          <tr><td>Scan initiation and infrastructure failure</td><td class="high">Poor</td><td>Scan checkpoint event</td></tr>
+          <tr><td>Approval duration and percentiles</td><td class="high">Poor</td><td>Correlated request and decision events</td></tr>
+          <tr><td>Pipeline health</td><td class="high">Poor</td><td>Central GitHub workflow collector</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="retention"><h2>Impact of Splunk’s 40-day data-retention limit</h2><p>A 40-day retention period materially changes the reporting design. Splunk can provide excellent operational and security visibility for the recent window, but it cannot be the only durable system for cumulative, long-term, or compliance history.</p>
+        <h3>Requirements affected</h3><div class="table-wrap"><table><thead><tr><th>Requirement</th><th>Effect of 40-day retention</th><th>Required treatment</th></tr></thead><tbody>
+          <tr><td>Current total images whitelisted</td><td>Can still be accurate if a fresh complete state snapshot exists.</td><td>Send a normalized full catalog snapshot more frequently than every 40 days; daily or weekly is safer.</td></tr>
+          <tr><td>Weekly trend</td><td>Supported for recent weeks.</td><td>Use live events within the retained window.</td></tr>
+          <tr><td>Monthly trend</td><td>Only the current and immediately previous month may be partially available.</td><td>Persist monthly aggregates outside the 40-day raw index or use a longer-retention summary/metrics index.</td></tr>
+          <tr><td>Cumulative whitelist count</td><td>Cannot be calculated by counting retained publish events.</td><td>Calculate from current catalog state, not retained event history.</td></tr>
+          <tr><td>Long-term vulnerability trend</td><td>Older scan events disappear.</td><td>Store daily/weekly severity aggregates with longer retention outside the raw-event index.</td></tr>
+          <tr><td>Time-to-approval P50/P95/P99</td><td>Only represents requests completed in the recent window and may be unstable at low volume.</td><td>Label it “rolling 40 days” or persist aggregate distributions/percentile inputs in a longer-lived store.</td></tr>
+          <tr><td>Historical whitelist changes</td><td>Cannot satisfy a long-term audit requirement from Splunk alone.</td><td>Keep Git/catalog history as the durable source and define an approved audit retrieval process.</td></tr>
+          <tr><td>Image lifecycle timeline</td><td>Timeline is truncated after 40 days.</td><td>Display a rolling timeline in Splunk; retrieve older lifecycle history from the durable archive.</td></tr>
+          <tr><td>Policy-violation tracking</td><td>Only recent violations remain searchable.</td><td>Persist compliance aggregates or violation records in a longer-retention approved system.</td></tr>
+        </tbody></table></div>
+        <h3>Recommended retention architecture</h3><div class="flow"><div class="node"><b>Raw live events</b><span>Splunk, rolling 40 days for operational investigation and recent dashboards</span></div><div class="arrow">→</div><div class="node"><b>Long-lived summaries</b><span>Longer-retention Splunk summary/metrics index if available, or approved durable reporting store</span></div><div class="arrow">→</div><div class="node green"><b>Authoritative history</b><span>Catalog Git history plus request system for audit reconstruction and backfill</span></div></div>
+        <p>If the organization cannot provide any Splunk index with retention longer than 40 days, the dashboards must clearly separate:</p><ul><li><strong>Current state</strong> — rebuilt from the latest catalog snapshot.</li><li><strong>Rolling metrics</strong> — explicitly labeled “last 40 days.”</li><li><strong>Long-term aggregates</strong> — read from an approved durable store or regenerated from authoritative history.</li></ul>
+        <div class="danger"><strong>Acceptance-criteria conflict:</strong> Dashboard 4’s historical whitelist changes and lifecycle timeline cannot be fully satisfied by a 40-day-only Splunk index. Either the requirement must be defined as a rolling 40-day view, or a longer-retention summary/archive must be approved.</div>
+        <h3>Backfill implication</h3><p>A large historical backfill into a 40-day-retention raw index has limited value because it will expire according to index policy. Before running the backfill, decide whether it is intended only to initialize current dashboards, populate a longer-retention summary index, or create an external compliance archive. Do not spend effort importing years of detailed events into an index that will discard them shortly afterward.</p>
+        <h3>Snapshot cadence</h3><p>The reconciliation snapshot must run comfortably within the retention window. Daily is recommended for current-state recovery and operational confidence. Every snapshot should carry a <code>snapshot_id</code>, <code>snapshot_at</code>, and artifact count. Splunk searches should select the latest complete snapshot rather than unioning multiple snapshots as new whitelist events.</p>
+      </section>
+
+      <section id="scheduled"><h2>Recommended treatment for scheduled runs</h2><p>Scheduled image discovery and scanning must be instrumented separately from IssueOps. Although there is no user request or issue, it is still a GitHub Actions run with <code>github.event_name == 'schedule'</code>. The important difference is that it produces system-initiated artifact events rather than request events.</p>
+        <h3>Events to emit</h3><p>For scheduled runs, do not emit <code>whitelist_request_initiated</code>. Instead emit:</p>
+        <pre><code>release_detected
+scheduled_ingestion_started
+vulnerability_scan_started
+vulnerability_scan_completed
+catalog_publish
+catalog_scan_gated
+scheduled_ingestion_failed</code></pre>
+        <p>These events have no <code>request_issue</code>, which is correct.</p>
+        <pre><code>{
+  "event_type": "release_detected",
+  "trigger_type": "schedule",
+  "initiator_type": "system",
+  "request_issue": null,
+  "artifact_id": "dockerhub:library/nginx:1.28.0",
+  "source_workflow": "dockerhub-workflow-image-lifecycle.yml",
+  "source_run_id": "18452001",
+  "detected_at": "2026-07-20T10:03:12Z"
+}</code></pre>
+        <h3>Where events should be generated</h3><p>The scheduled image lifecycle has several meaningful checkpoints:</p>
+        <pre><code>Scheduled workflow starts
+        │
+        ▼
+Discover new image/tag
+        └── release_detected
+        │
+        ▼
+Construct/download image
+        └── scheduled_ingestion_started
+        │
+        ▼
+Begin vulnerability scan
+        └── vulnerability_scan_started
+        │
+        ▼
+Complete scan
+        ├── vulnerability_scan_completed
+        └── scheduled_ingestion_failed
+        │
+        ▼
+Publish and update catalog
+        ├── catalog_publish
+        ├── catalog_scan_gated
+        └── catalog_eol_block</code></pre>
+        <p>The event producer is the scheduled lifecycle workflow itself. The shared composite action only delivers the generated batch to Splunk.</p>
+        <h3>Avoid one HEC call per matrix step</h3><p>Scheduled lifecycle workflows can process many images through matrices. Calling Splunk for every command would be inefficient. Use this pattern:</p>
+        <ol><li>The discovery job writes <code>release-detected.ndjson</code>.</li><li>Call <code>emit-telemetry</code> once to send the discovery batch.</li><li>Each scan matrix job writes its artifact-level result file.</li><li>Upload those files as GitHub run artifacts.</li><li>The consolidation job downloads and combines them.</li><li>After the catalog update, call <code>emit-telemetry</code> once with the final batch.</li></ol>
+        <pre><code>- name: Build scheduled discovery events
+  run: |
+    # Existing discovery output is transformed into:
+    # telemetry/release-detected.ndjson
+
+- name: Emit release-detected events
+  uses: ./.github/actions/emit-telemetry
+  with:
+    event-file: telemetry/release-detected.ndjson</code></pre>
+        <p>The final consolidation job can send <code>vulnerability_scan_completed</code>, <code>catalog_publish</code>, <code>catalog_scan_gated</code>, and <code>scheduled_ingestion_failed</code>.</p>
+        <h3>Operational versus artifact events</h3><p>The centralized GitHub collector still sends the run-level event:</p>
+        <pre><code>{
+  "event_type": "workflow_completed",
+  "trigger_type": "schedule",
+  "workflow_conclusion": "success",
+  "source_run_id": "18452001"
+}</code></pre>
+        <p>That answers: “Did the scheduled automation run successfully?”</p>
+        <p>The lifecycle workflow sends artifact-level events:</p>
+        <pre><code>{
+  "event_type": "catalog_scan_gated",
+  "artifact_id": "dockerhub:library/nginx:1.28.0",
+  "policy_gate": "fail",
+  "reason_category": "critical_vulnerability",
+  "source_run_id": "18452001"
+}</code></pre>
+        <p>That answers: “What happened to this specific discovered image?” Both events are required.</p>
+        <h3>Correlation without an issue number</h3><p>Scheduled artifacts should be joined using <code>artifact_id</code>, <code>source_run_id</code>, <code>source_workflow</code>, <code>processing_id</code>, and <code>catalog_commit</code> when available.</p>
+        <pre><code>{
+  "processing_id": "18452001:dockerhub:library/nginx:1.28.0",
+  "artifact_id": "dockerhub:library/nginx:1.28.0",
+  "request_issue": null
+}</code></pre>
+        <p><code>request_issue: null</code> is not a data gap. There was no request.</p>
+        <h3>Keep scheduled and request-driven metrics separate</h3><p>Do not mix scheduled discovery latency with human request approval time.</p>
+        <pre><code>Issue-driven:
+time_to_approval = policy_decision_at - request_initiated_at
+
+Scheduled discovery:
+time_to_ingest = cataloged_at - detected_at</code></pre>
+        <p>Include the following dimensions in Splunk:</p>
+        <pre><code>trigger_type = issue | schedule | workflow_dispatch | recurring_scan
+initiator_type = user | system</code></pre>
+        <p>This lets dashboards separate request-driven approvals, automatically discovered releases, scheduled ingestion success rate, scheduled scan failure rate, detection-to-publication time, and user request-to-approval time without mixing their denominators.</p>
+        <h3>Workflows requiring scheduled instrumentation</h3><p>The catalog verification in <code>image-request-ops.yml</code> covers only issue-driven image requests. Scheduled discovery requires instrumentation in the production vendor lifecycle workflows:</p>
+        <ul><li><code>amazon-workflow-image-lifecycle.yml</code></li><li><code>aquasec-workflow-image-lifecycle.yml</code></li><li><code>dockerhub-workflow-image-lifecycle.yml</code></li><li><code>ghcr-workflow-image-lifecycle.yml</code></li><li><code>ibm-workflow-image-lifecycle.yml</code></li><li><code>kubernetes-workflow-image-lifecycle.yml</code></li><li><code>microsoft-workflow-image-lifecycle.yml</code></li><li><code>netboxlabs-workflow-image-lifecycle.yml</code></li><li><code>quayio-workflow-image-lifecycle.yml</code></li><li><code>redhat-workflow-image-lifecycle.yml</code></li></ul>
+        <p>The best insertion points are their existing discovery, scan-result aggregation, and catalog-consolidation checkpoints.</p>
+        <p>Recurring scanning should similarly be instrumented in <code>image-recurring-scan.yml</code> and <code>library-recurring-scan.yml</code>. Recurring scans should emit <code>recurring_scan</code>, not <code>release_detected</code>, unless the workflow genuinely discovers and onboards a new release.</p>
+        <h3>Failure and reconciliation behavior</h3><p>If Splunk is unavailable, the scheduled workflow must continue, the failed batch must be visible and replayable, the daily catalog snapshot should restore the latest final state, and the central workflow collector should still report the failed or successful run when possible.</p>
+        <p>The snapshot cannot recreate precise events such as <code>vulnerability_scan_started</code>, but it can recover the final catalog state.</p>
+        <pre><code>Issue-driven workflow
+    └── request and artifact outcome events
+
+Scheduled lifecycle workflow
+    └── discovery, ingestion, scan and artifact outcome events
+
+Central Actions collector
+    └── operational run events for both trigger types
+
+Catalog reconciliation snapshot
+    └── final-state recovery and consistency validation</code></pre>
+        <blockquote>Scheduled image processing uses the same hybrid architecture with <code>trigger_type: schedule</code>, no request issue, and business events emitted from the lifecycle workflow rather than <code>image-request-ops.yml</code>.</blockquote>
+      </section>
+
+      <section id="corrections"><h2>Corrections required before adopting the new proposal</h2>
+        <div class="callout"><strong>Correction 1 — a composite action cannot be invoked inside a shell loop.</strong> The existing verification is one large <code>run:</code> step. It should append normalized events to an NDJSON batch file and expose its path; the next workflow step invokes <code>emit-telemetry</code> once to send the batch.</div>
+        <pre><code>catalog verification shell loop
+  └── append one JSON event per artifact to telemetry-events.ndjson
+
+following workflow step
+  └── uses: ./.github/actions/emit-telemetry
+      with:
+        event-file: telemetry-events.ndjson</code></pre>
+        <div class="callout"><strong>Correction 2 — request workflows do not observe every catalog mutation.</strong> Vendor lifecycles also run on schedules and can discover new releases without an issue. npm, PyPI, Helm, Windows, recurring scans, blackouts, and package merge paths mutate catalog state independently. The request-workflow checkpoints cover request-driven outcomes, not the complete publication universe.</div>
+        <p>For full “new releases detected” and catalog lifecycle reporting, either instrument the category-specific catalog-write checkpoints or accept that the reconciliation snapshot will report these later without request context. The latter is acceptable for an initial phase but not for real-time completeness.</p>
+        <div class="callout"><strong>Correction 3 — direct fail-soft delivery is not durable.</strong> Always exiting zero protects publication, but <code>|| true</code> alone silently loses events. The action must return a delivery status, add a warning/job summary, and retain the failed batch as an artifact or otherwise make it replayable. Reconciliation protects final catalog state but cannot reconstruct every request or scan-start event.</div>
+        <div class="callout"><strong>Correction 4 — “full snapshot diff” needs durable state.</strong> A job cannot emit only changed hashes unless it has a reliable previous-hash store. The simplest safety net is to send a complete periodic snapshot to a separate sourcetype with a <code>snapshot_id</code>. If changed-only reconciliation is required, define a durable checkpoint store explicitly.</div>
+        <div class="callout"><strong>Correction 5 — one artifact ID is insufficient for generic or unresolved requests.</strong> At request initiation, a generic tag may not yet resolve to the final catalog version or digest. Use a durable <code>request_item_id</code> for the requested item and a separate resolved <code>artifact_id</code> when the concrete version is known.</div>
+        <div class="callout"><strong>Correction 6 — operational telemetry is still required.</strong> The proposed schema omits workflow-start/completion/cancellation events and detailed scan lifecycle events needed by the Operational Metrics dashboard. A central collector remains part of the final hybrid architecture.</div>
+      </section>
+
+      <section id="architecture"><h2>Recommended production architecture</h2><div class="four"><div class="card"><b>Request producer</b><span>One event per requested artifact: initiated, validated, rejected, dispatched</span></div><div class="card"><b>Outcome producers</b><span>Cataloged, published, gated, EOL, suppressed, blackout, recurring scan</span></div><div class="card"><b>Workflow collector</b><span>Queued, started, completed, failed, cancelled, duration</span></div><div class="card"><b>Reconciliation</b><span>Daily authoritative catalog snapshot plus mismatch alerting</span></div></div><div class="flow"><div class="node"><b>Schema-aware producers</b><span>Determine what happened and construct NDJSON batches</span></div><div class="arrow">→</div><div class="node"><b>emit-telemetry composite</b><span>Validate, redact, batch, retry, report delivery; never determine business outcome</span></div><div class="arrow">→</div><div class="node green"><b>Splunk HEC</b><span>40-day raw events plus approved long-lived summaries where available</span></div></div><h3>Live mechanism</h3><p>Use write-time emission for events where a workflow already knows the authoritative transition. Do not run a live catalog Git-history walker.</p><h3>Safety net</h3><p>Send a daily complete catalog snapshot, or a changed-only snapshot backed by a clearly defined durable hash store. Compare the snapshot with latest live artifact state in Splunk and alert on missing or inconsistent events. The snapshot ensures current inventory remains recoverable within the 40-day retention window.</p><h3>Historical bootstrap</h3><p>Use <code>extract_from_catalog_commits.py</code> once only when the destination has suitable retention or when generating long-lived aggregates. Tag all such events <code>source_type=backfill</code> and document that request correlation is unavailable. Leave <code>metrics-catalog.yml</code> unchanged for its existing local reports.</p><h3>Long-term reporting</h3><p>Retain catalog Git history and request records as the durable evidence layer. If Splunk offers a longer-retention summary or metrics index, populate it with daily/weekly aggregates. Otherwise, store those aggregates in an approved durable reporting system and label raw Splunk dashboards as rolling 40-day views.</p></section>
+
+      <section id="schema"><h2>Recommended identity and event schema</h2><p>Retain the draft’s intersection fields and <code>extra</code> bag, but use two correlation identities:</p><ul><li><code>request_item_id</code>: created per artifact in an issue, such as a hash of repository, issue number, item index, and normalized requested reference. It exists before a concrete release is known.</li><li><code>artifact_id</code>: identity of the resolved catalog artifact/version; include digest when it is stable and available, but do not require it for artifact kinds that lack one.</li></ul><pre><code>{
+  "schema_version": "1.0",
+  "event_id": "sha256(canonical event identity)",
+  "event_type": "request_initiated|catalog_publish|catalog_scan_gated|catalog_eol_block|recurring_scan|workflow_completed|reconciliation_snapshot",
+  "ts": "ISO8601",
+  "request_item_id": "sha256(repo|issue|item-index|requested-ref)",
+  "artifact_id": "container|amazon|amazoncorretto|21|sha256:...",
+  "artifact_kind": "container|helm-chart|library-pypi|library-npm|package-amazon|package-oracle|package-microsoft",
+  "request_issue": 4821,
+  "source_run_id": "18452...",
+  "source_run_attempt": 1,
+  "source_workflow": "image-request-ops.yml",
+  "source_step": "catalog_outcome_verification",
+  "catalog_ref": {
+    "status": "active",
+    "artif_ng": "...",
+    "security_report": "...",
+    "tag_or_release": "..."
+  },
+  "reason_category": null,
+  "extra": {}
+}</code></pre><p>Generate <code>event_id</code> from canonical JSON components rather than a delimiter string when values may themselves contain delimiters. Include run attempt and a stable source-step code. For an outcome emitted by a request tracker, <code>source_run_id</code> should clearly identify whether it means the request run or the dispatched lifecycle run; preferably carry both.</p></section>
+
+      <section id="files"><h2>Files to add and update</h2><h3>Files to add</h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Purpose</th><th>Required?</th></tr></thead><tbody>
+        <tr><td><code>.github/actions/emit-telemetry/action.yml</code></td><td>Composite wrapper: validate inputs, call sender, expose delivery status.</td><td class="best">Yes</td></tr>
+        <tr><td><code>.github/actions/emit-telemetry/emit.sh</code></td><td>HEC batching, TLS, timeout, retry/backoff, size limits, safe logging.</td><td class="best">Recommended</td></tr>
+        <tr><td><code>scripts/telemetry/validate_events.py</code></td><td>Validate schema, allowed event types/keys, timestamps and required correlation fields.</td><td class="best">Recommended</td></tr>
+        <tr><td><code>scripts/telemetry/reconcile_catalog.py</code></td><td>Normalize all authoritative catalog shapes into periodic snapshot records.</td><td class="best">Yes</td></tr>
+        <tr><td><code>.github/workflows/telemetry-reconciliation.yml</code></td><td>Scheduled catalog clone, snapshot creation and fail-soft HEC delivery.</td><td class="best">Yes</td></tr>
+        <tr><td><code>.github/workflows/telemetry-workflow-events.yml</code></td><td>Central <code>workflow_run</code> operational event collector, if GHES event support is adequate.</td><td class="best">For full acceptance criteria</td></tr>
+        <tr><td><code>docs/TELEMETRY.md</code></td><td>Schema, semantics, identity rules, failure taxonomy, HEC configuration and replay procedure.</td><td class="best">Yes</td></tr>
+        <tr><td><code>tests/telemetry/...</code></td><td>Fixtures and tests for multi-image batches, artifact kinds, retries, invalid payloads and snapshot normalization.</td><td class="best">Yes</td></tr>
+      </tbody></table></div>
+      <h3>Primary files to update</h3><div class="table-wrap"><table><thead><tr><th>File</th><th>Update</th><th>Complexity</th></tr></thead><tbody>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/image-request-ops.yml">image-request-ops.yml</a></td><td>Create per-artifact request batch after validated parsing; append outcome events during existing catalog verification; invoke sender in separate steps.</td><td class="medium">Medium</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/library-request-ops.yml">library-request-ops.yml</a></td><td>Create per-package request events and normalize its post-run results/failures.</td><td class="medium">Medium</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/helm-charts-request-ops.yml">helm-charts-request-ops.yml</a></td><td>Use parsed chart items and downloaded per-chart status artifacts; map chart-specific reasons.</td><td class="high">High</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/windows-package-request-ops.yml">windows-package-request-ops.yml</a></td><td>Emit request and catalog-verified package outcomes; carry request and lifecycle run IDs.</td><td class="medium">Medium</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/image-recurring-scan.yml">image-recurring-scan.yml</a></td><td>Batch per-artifact recurring scan results without request issue.</td><td class="high">Medium–High</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/library-recurring-scan.yml">library-recurring-scan.yml</a></td><td>Batch library scan results and malware/security fields.</td><td class="high">Medium–High</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/catalog-merge.yml">catalog-merge.yml</a></td><td>Emit package catalog result using package name/version; optionally add caller-provided request context later.</td><td class="medium">Medium</td></tr>
+        <tr><td><a href="/Users/gilbertomendez/RECORE.third-party/scripts/metrics/extract_from_catalog_commits.py">extract_from_catalog_commits.py</a></td><td>Add backfill output metadata or a separate backfill adapter. Do not change its scheduled local-report contract.</td><td class="medium">Medium</td></tr>
+      </tbody></table></div>
+      <h3>Additional files likely required for complete real-time coverage</h3><p>The draft’s seven workflow targets do not cover all catalog writers. Scheduled vendor image lifecycles, npm/PyPI lifecycle catalog jobs, Helm lifecycle catalog commits, Windows lifecycle catalog commits, and blackout processing can change final artifact state without passing through the listed request outcome loops.</p><p>Expect updates to the production members of these categories:</p><ul><li>Ten <code>*-workflow-image-lifecycle.yml</code> vendor workflows, unless their duplicated catalog-write logic is first centralized.</li><li><code>npm-library-workflow.yml</code> and <code>pypi-library-workflow.yml</code>.</li><li><code>helm-charts-workflow.yml</code>.</li><li><code>windows-pkg-microsoft-workflow-lifecycle.yml</code> and <code>windows-pkg-oracle-workflow-lifecycle.yml</code>.</li><li><code>library-blackout-request-ops.yml</code>.</li><li>Shared scan workflows or the remaining embedded scanner checkpoints needed for scan-start and scan-failure events.</li></ul><div class="callout"><strong>Recommended scope control:</strong> do not edit all vendor lifecycles in Phase 1. Prove the event contract through image IssueOps, then centralize repeated event-building logic before expanding.</div></section>
+
+      <section id="difficulty"><h2>Implementation difficulty and effort</h2><p>The composite action itself is not the difficult part. The hard work is defining stable semantics across artifact types, finding every authoritative checkpoint, maintaining per-artifact correlation through multi-item and scheduled runs, and proving that fail-soft telemetry is recoverable.</p><div class="table-wrap"><table><thead><tr><th>Scope</th><th>Difficulty</th><th>Estimated engineering effort</th><th>Outcome</th></tr></thead><tbody>
+        <tr><td>Composite action proof of concept</td><td class="medium">Medium</td><td>3–5 engineer-days</td><td>Validated HEC transport, retry and no-op/log-only mode.</td></tr>
+        <tr><td>Image IssueOps Phase 1</td><td class="medium">Medium</td><td>5–8 engineer-days</td><td>Multi-image request initiation and catalog-verified outcomes.</td></tr>
+        <tr><td>Core image/library/recurring/package paths</td><td class="high">Medium–High</td><td>10–18 engineer-days</td><td>Most high-volume domain events.</td></tr>
+        <tr><td>Helm and Windows bespoke paths</td><td class="high">High</td><td>7–12 engineer-days</td><td>Per-chart and package-specific event normalization.</td></tr>
+        <tr><td>Workflow collector, reconciliation and backfill</td><td class="high">Medium–High</td><td>8–14 engineer-days</td><td>Operational coverage, safety net and history.</td></tr>
+        <tr><td>All remaining scheduled lifecycle writers and scan boundaries</td><td class="high">High</td><td>8–15 engineer-days</td><td>Complete acceptance-criteria coverage.</td></tr>
+        <tr><td>Splunk dashboards, SPL validation and production hardening</td><td class="high">Medium–High</td><td>7–12 engineer-days</td><td>Four accepted dashboards and monitoring.</td></tr>
+      </tbody></table></div><p><strong>Planning range:</strong> approximately 40–65 engineer-days for full production coverage and dashboards, assuming HEC, secrets, indexes, network access, and a test receiver are already available. One engineer should plan roughly 8–13 weeks; two engineers working in parallel can often deliver in 5–8 calendar weeks. A production-quality image-only pilot is approximately 2–3 weeks.</p><p>These estimates include tests and rollout validation but not organizational lead time for Splunk provisioning, network firewall changes, security review, or dashboard stakeholder approval.</p></section>
+
+      <section id="rollout"><h2>Recommended phased rollout</h2>
+        <div class="phase"><b>Phase 0</b><p>Finalize event semantics, dual identity, sourcetypes, failure taxonomy, HEC contract, and the 40-day retention strategy. Decide where long-lived aggregates and compliance history will reside. Implement the sender in log-only/no-op mode with tests.</p><span class="days">3–5 days</span></div>
+        <div class="phase"><b>Phase 1</b><p>Instrument image IssueOps only. Build request and outcome NDJSON batches, then send in separate composite-action steps. Validate multi-image correlation and time-to-approval.</p><span class="days">5–8 days</span></div>
+        <div class="phase"><b>Phase 2</b><p>Add library IssueOps, recurring scans, catalog merge and central operational workflow events. Establish delivery-health monitoring.</p><span class="days">8–14 days</span></div>
+        <div class="phase"><b>Phase 3</b><p>Add Helm and Windows bespoke mappings plus blackout/lifecycle transitions. Review uninstrumented scheduled catalog writers.</p><span class="days">7–12 days</span></div>
+        <div class="phase"><b>Phase 4</b><p>Deploy daily full snapshot reconciliation. Run controlled historical backfill only into a destination whose retention supports its purpose, and verify live/backfill boundaries.</p><span class="days">5–8 days</span></div>
+        <div class="phase"><b>Phase 5</b><p>Complete remaining scan/lifecycle coverage, four Splunk dashboards, alerting, replay runbook, performance testing and acceptance sign-off.</p><span class="days">10–18 days</span></div>
+      </section>
+
+      <section id="verification"><h2>Verification requirements</h2><ul><li>Use a stand-in HEC receiver before production Splunk and assert exact request headers, batches, retries, timeouts and redaction.</li><li>Run a real test-vendor image request and confirm existing issue comments, closing behavior, publication and catalog output remain unchanged.</li><li>For a multi-image issue, verify one <code>request_initiated</code> and one terminal outcome per item, with distinct <code>request_item_id</code> values.</li><li>Verify that resolved generic tags link the initial request item to the concrete published <code>artifact_id</code>.</li><li>Test active, suppressed, inactive, EOL, not-cataloged, scanner failure, catalog failure and workflow cancellation outcomes.</li><li>Make HEC unreachable and confirm publication remains successful while the failed telemetry batch is visible and replayable.</li><li>Re-run the same workflow attempt and confirm deterministic event IDs prevent duplicate dashboard counts.</li><li>Run scheduled reconciliation and verify it identifies an intentionally omitted live event or out-of-band catalog edit.</li><li>Backfill a bounded time interval and confirm the backfill cutoff cannot overlap live events without deduplication.</li><li>Reconcile Splunk current whitelist totals against the catalog/ICEDevX source before accepting Dashboard 1.</li></ul></section>
+
+      <section id="final" class="decision"><h2>Final decision</h2><p><strong>Choose the write-time checkpoint approach over the live catalog commit-diff exporter.</strong> It is a better fit for this repository because the workflows already possess the issue, artifact, status, scan, and publication context that the catalog history cannot reliably reconstruct.</p><p>Do not adopt the draft unchanged. Add a central workflow collector, use a dual request-item/artifact identity, batch events before invoking the composite action, make failed deliveries observable and replayable, and define a durable reconciliation model. Expand instrumentation deliberately because the request workflows alone do not cover every scheduled catalog writer.</p><p>Because Splunk retains data for only 40 days, use it for recent events and operational analysis—not as the sole compliance archive. Rebuild current inventory from daily catalog snapshots, preserve catalog/request history as durable evidence, and obtain a longer-retention summary/metrics index or approved external aggregate store for monthly, cumulative, and compliance reporting.</p><blockquote>Use the composite action as shared transport; use existing workflow checkpoints as domain-event producers; use catalog snapshots as reconciliation and current-state recovery; use catalog history as durable evidence and selective backfill—not as the live event feed.</blockquote></section>
+    </main>
+  </div>
+  <footer>Assessment based on the supplied catalog-repository findings and direct inspection of the RECORE.third-party workflows in the current workspace. Estimates are planning ranges and should be refined after HEC/network readiness and production catalog schemas are confirmed.</footer>
+</body>
+</html>
