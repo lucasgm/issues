@@ -1,0 +1,118 @@
+I think the metrics-catalog.yml is only used to generate a separate report I believe is use to generate "additions.ndjson" which
+is use to generate a local report I don think we need to use it to forward to splunk except all the other json files in catalog
+
+I agree with your interpretation.
+metrics-catalog.yml is a local reporting workflow, not part of the core catalog production flow and not the best component to forward data to Splunk.
+It currently:
+Clones the catalog repository with full history.
+
+Generates:
+additions.ndjson
+scans.ndjson
+all-events.ndjson
+
+Uses those generated files to build:
+REPORT.md
+DASHBOARD.html
+
+Commits selected report outputs back into the catalog repository.
+
+Notably, scans.ndjson and all-events.ndjson are explicitly excluded from Git because they become too large. Therefore, this pipeline is designed primarily for regenerated local reports, not durable event forwarding.
+Revised recommendation
+Splunk should not consume:
+metrics/events/additions.ndjson
+metrics/events/scans.ndjson
+metrics/events/all-events.ndjson
+metrics/REPORT.md
+metrics/DASHBOARD.html
+Splunk should instead consume changes to the authoritative catalog JSON files, such as:
+vendor-catalog/containers/*.json
+vendor-catalog/charts/*.json
+vendor-catalog/library/*.json
+vendor-catalog/packages/*.json
+The exact paths should be confirmed against the catalog repository.
+Important distinction
+Sending the complete JSON files to Splunk after every update is possible, but it may cause:
+Duplicate records
+Large payloads
+Difficulty distinguishing new entries from modified entries
+Incorrect historical counts
+Repeated vulnerability data
+Difficulty detecting removals
+A better model is:
+Catalog JSON change
+        │
+        ▼
+Compare previous commit with current commit
+        │
+        ▼
+Generate only changed artifact events
+        │
+        ▼
+Send changed events to Splunk HEC
+For example, when a container JSON changes, the exporter should classify each difference as:
+artifact_added
+release_added
+scan_updated
+status_changed
+artifact_removed
+artifact_blacked_out
+suppression_added
+suppression_expired
+whitelist_expired
+whitelist_renewed
+The existing extract_from_catalog_commits.py can be used as a reference for understanding the catalog schemas and comparison logic, but the Splunk implementation should not depend on the generated NDJSON report files.
+Recommended catalog exporter
+The exporter should run from RECORE.third-party-catalog when authoritative files change on main:
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vendor-catalog/containers/**"
+      - "vendor-catalog/charts/**"
+      - "vendor-catalog/library/**"
+      - "vendor-catalog/packages/**"
+It should compare:
+github.event.before → github.sha
+This allows it to send only the changes introduced by that catalog update.
+A scheduled reconciliation workflow can remain as a recovery mechanism, but normal Splunk delivery should be event-driven.
+What remains outside the catalog
+The catalog can supply authoritative final outcomes, including:
+Image published
+Image active/inactive/suppressed
+New image or release
+Scan severity information
+Scan-gate status
+Artifactory destination
+Blackout or removal, when represented in the catalog
+Expiration or renewal, if those fields are added
+But it cannot reliably supply:
+Whitelist request initiated
+Validation failures before catalog creation
+Ingestion attempt started
+Vulnerability scan initiated
+Workflow cancellation
+Runner or infrastructure failure
+Request rejected before reaching the catalog
+Detailed pipeline duration
+Those still require request and GitHub Actions events.
+Corrected architecture
+IssueOps / request workflow
+    └── request initiated, validation, early rejection
+
+GitHub Actions collector
+    └── workflow started, completed, failed, cancelled, duration
+
+Scan instrumentation
+    └── scan initiated, completed, failed
+
+Authoritative catalog JSON changes
+    └── published, gated, suppressed, removed, new release, final scan state
+                         │
+                         ▼
+                     Splunk HEC
+So the corrected conclusion is:
+Do not use metrics-catalog.yml or its generated NDJSON files as the Splunk source. Read changes directly from the authoritative catalog JSON files. Reuse only the extractor’s schema knowledge and diffing ideas where helpful.
+
+This also avoids coupling Splunk ingestion to a separate reporting workflow that runs daily and regenerates historical metrics.
+
