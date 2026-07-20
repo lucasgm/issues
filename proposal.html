@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Catalog-First Hybrid Splunk Architecture</title>
+  <style>
+    :root{color-scheme:light;--ink:#17212b;--muted:#5d6d79;--navy:#102a43;--blue:#1769aa;--blue2:#0f527f;--green:#18784b;--amber:#956100;--red:#a63838;--line:#d9e2e8;--paper:#fff;--wash:#f3f6f8;--blue-soft:#eaf4fb;--green-soft:#eaf7ef;--amber-soft:#fff5dd;--red-soft:#fceded;--shadow:0 14px 42px rgba(16,42,67,.09)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--wash);font:16px/1.63 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}code{padding:2px 5px;border-radius:4px;background:#edf2f5;color:#7c2b38}a{color:var(--blue)}
+    .hero{padding:66px 24px 58px;color:#fff;background:linear-gradient(135deg,#102a43,#1769aa 68%,#18784b 145%)}.hero-inner,.layout,footer{max-width:1200px;margin:auto}.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.76rem;font-weight:850;opacity:.77}.hero h1{max-width:930px;margin:12px 0 16px;font-size:clamp(2.3rem,5vw,4rem);line-height:1.06;letter-spacing:-.045em}.hero p{max-width:880px;margin:0;color:#e0eef7;font-size:1.16rem}.badge{display:inline-flex;align-items:center;gap:10px;margin-top:27px;padding:10px 15px;border:1px solid rgba(255,255,255,.27);border-radius:999px;background:rgba(255,255,255,.1);font-weight:780}.dot{width:10px;height:10px;border-radius:50%;background:#67dfa5;box-shadow:0 0 0 5px rgba(103,223,165,.16)}
+    .layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:34px;padding:38px 24px 72px}nav{position:sticky;top:20px;align-self:start;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--shadow)}nav strong{display:block;margin-bottom:8px;color:var(--navy)}nav a{display:block;padding:7px 9px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:.91rem}nav a:hover{color:var(--blue);background:var(--blue-soft)}main{min-width:0}section{margin-bottom:32px;padding:30px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:var(--shadow)}h2{margin:0 0 14px;color:var(--navy);font-size:1.7rem;letter-spacing:-.025em}h3{margin:25px 0 8px;color:var(--navy);font-size:1.1rem}p{margin:10px 0}ul,ol{padding-left:1.3rem}li+li{margin-top:7px}
+    .decision{border-left:6px solid var(--green);background:linear-gradient(90deg,var(--green-soft),#fff 42%)}.decision strong{color:var(--green)}.warning{margin:20px 0;padding:16px 18px;border-left:4px solid var(--amber);border-radius:10px;background:var(--amber-soft)}.warning strong{color:var(--amber)}.danger{margin:20px 0;padding:16px 18px;border-left:4px solid var(--red);border-radius:10px;background:var(--red-soft)}.danger strong{color:var(--red)}
+    .table-wrap{overflow-x:auto;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:.92rem}th{color:#fff;background:var(--navy);text-align:left}th,td{padding:12px 13px;border:1px solid var(--line);vertical-align:top}tbody tr:nth-child(even){background:#f8fafb}.yes{color:var(--green);font-weight:850}.partial{color:var(--amber);font-weight:850}.no{color:var(--red);font-weight:850}
+    .flow{display:grid;grid-template-columns:1fr 46px 1fr 46px 1fr;align-items:stretch;margin:23px 0}.node{padding:19px;border:1px solid #a6c6da;border-radius:12px;background:var(--blue-soft)}.node.green{border-color:#9bc9aa;background:var(--green-soft)}.node b{display:block;margin-bottom:5px;color:var(--navy)}.node span{color:var(--muted);font-size:.89rem}.arrow{display:grid;place-items:center;color:var(--blue);font-size:1.5rem;font-weight:900}.sources{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}.source{padding:17px;border:1px solid var(--line);border-radius:11px;background:#fbfcfd}.source b{display:block;color:var(--blue);margin-bottom:5px}.source span{color:var(--muted);font-size:.88rem}
+    pre{overflow:auto;margin:17px 0;padding:20px;border-radius:12px;background:#111d29;color:#dcebf6;font-size:.84rem;line-height:1.55}pre code{padding:0;color:inherit;background:transparent}.phase{display:grid;grid-template-columns:90px 1fr;gap:15px;padding:17px 0;border-top:1px solid var(--line)}.phase:first-of-type{border-top:0}.phase b{color:var(--blue)}.phase p{margin:0}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.card{padding:18px;border:1px solid var(--line);border-radius:11px;background:#fbfcfd}.card b{display:block;margin-bottom:6px;color:var(--blue)}.card p{margin:0;color:var(--muted);font-size:.91rem}blockquote{margin:20px 0 0;padding:20px 22px;border-left:5px solid var(--green);border-radius:10px;background:var(--green-soft);color:#185638;font-size:1.08rem;font-weight:760}footer{padding:0 24px 42px;color:var(--muted);font-size:.9rem}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}nav{position:static}.sources{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr}.arrow{min-height:42px;transform:rotate(90deg)}}@media(max-width:650px){.sources,.cards{grid-template-columns:1fr}section{padding:21px}}@media print{body{background:#fff}.hero{padding:35px 0}.layout{display:block;padding:24px 0}nav{display:none}section{box-shadow:none;break-inside:avoid}footer{padding:0}}
+  </style>
+</head>
+<body>
+  <header class="hero"><div class="hero-inner">
+    <div class="eyebrow">Cornerstone architecture assessment · RECORE third-party telemetry</div>
+    <h1>Catalog-first, then hybrid: the recommended Splunk approach</h1>
+    <p>A reassessment that excludes generated NDJSON and local reports from Splunk and uses authoritative catalog changes as the first dependable business-data source.</p>
+    <div class="badge"><span class="dot"></span> Recommendation refined—not reversed</div>
+  </div></header>
+
+  <div class="layout">
+    <nav aria-label="Report sections"><strong>Contents</strong>
+      <a href="#decision">Decision</a><a href="#boundary">Source boundary</a><a href="#why">Why catalog-first works</a><a href="#limits">Catalog limitations</a><a href="#model">Ingestion model</a><a href="#architecture">Target architecture</a><a href="#metrics">Requirements coverage</a><a href="#schema">Event contract</a><a href="#splunk">Splunk design</a><a href="#rollout">Delivery phases</a><a href="#risks">Controls</a><a href="#final">Final recommendation</a>
+    </nav>
+    <main>
+      <section id="decision" class="decision">
+        <h2>Reassessed decision</h2>
+        <p><strong>Yes, the authoritative catalog JSON files are the correct place to start.</strong> The recommendation remains hybrid, but its implementation order should be catalog-first rather than attempting all telemetry sources simultaneously.</p>
+        <p>The generated files under <code>metrics/</code> should not be sent to Splunk. They are derived reporting products, not authoritative records. The first Splunk integration should read changes from explicitly approved catalog JSON paths, create normalized change events, and establish reliable business metrics. Request, scan-start, and GitHub operational telemetry should then be added to fill the requirements the catalog cannot observe.</p>
+        <div class="warning"><strong>Important refinement:</strong> do not ingest “all other JSON files” indiscriminately. Ingest only an allowlist of authoritative catalog datasets. Catalog repositories often also contain generated indexes, configuration, schemas, cached data, and presentation files that would duplicate or distort the same artifacts.</div>
+      </section>
+
+      <section id="boundary">
+        <h2>Explicit source boundary</h2>
+        <h3>Excluded from Splunk</h3>
+        <ul><li><code>metrics/events/additions.ndjson</code></li><li><code>metrics/events/scans.ndjson</code></li><li><code>metrics/events/all-events.ndjson</code></li><li><code>metrics/REPORT.md</code></li><li><code>metrics/DASHBOARD.html</code></li></ul>
+        <p>These files are regenerated from history for local reporting. Consuming them would add another processing dependency, replay historical records, and create duplicate-delivery and checkpoint problems.</p>
+        <h3>Candidate authoritative inputs</h3>
+        <ul><li><code>vendor-catalog/containers/*.json</code></li><li><code>vendor-catalog/charts/*.json</code></li><li><code>vendor-catalog/library/*.json</code></li><li><code>vendor-catalog/packages/*.json</code></li></ul>
+        <p>The automation repository confirms these logical catalog areas: container providers, Helm charts, npm/PyPI libraries, and vendor packages. The exact file inventory and schemas must be validated in <code>RECORE.third-party-catalog</code> before implementation because that repository is not present in the current workspace.</p>
+        <h3>Selection rule</h3>
+        <p>A JSON file should be admitted only when it is an authoritative record of an artifact’s current state. Derived rollups, generated site data, indexes, cached API responses, and metrics output should be excluded even if they are JSON.</p>
+      </section>
+
+      <section id="why">
+        <h2>Why catalog-first is the right starting point</h2>
+        <div class="cards">
+          <div class="card"><b>Authoritative final state</b><p>The request workflow already verifies the catalog rather than treating a green lifecycle run as proof of publication.</p></div>
+          <div class="card"><b>Rich business metadata</b><p>Catalog entries carry status, scan dates, policy gate, vulnerability summaries, Artifactory location, sunset data, and suppression details.</p></div>
+          <div class="card"><b>Cross-workflow normalization</b><p>Vendor-specific workflows differ greatly, but their results converge into a much smaller number of catalog schemas.</p></div>
+          <div class="card"><b>Lower initial change risk</b><p>A catalog exporter avoids inserting Splunk network calls into the critical retrieve, scan, sign, and publish paths.</p></div>
+          <div class="card"><b>Historical bootstrap</b><p>The current catalog provides an initial inventory; Git history can support a controlled one-time backfill if historical trends are required.</p></div>
+          <div class="card"><b>Operational isolation</b><p>Splunk availability does not determine whether an image can be scanned or published.</p></div>
+        </div>
+        <p>This phase can immediately support the strongest catalog-backed metrics: current whitelist inventory, new cataloged images and releases, vendor distribution, final security posture, remediation lists, and catalog lifecycle changes.</p>
+      </section>
+
+      <section id="limits">
+        <h2>What catalog JSON cannot prove</h2>
+        <p>Catalog-first is a starting phase, not the complete acceptance-criteria solution. An artifact that never reaches the catalog leaves no authoritative catalog record.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Question</th><th>Catalog can answer?</th><th>Required source</th></tr></thead>
+          <tbody>
+            <tr><td>Is this image currently active, inactive, or suppressed?</td><td class="yes">Yes</td><td>Catalog current state</td></tr>
+            <tr><td>Was a new image or version cataloged?</td><td class="yes">Yes</td><td>Catalog commit diff</td></tr>
+            <tr><td>What was the final vulnerability summary?</td><td class="yes">Usually</td><td>Catalog security fields</td></tr>
+            <tr><td>Was the artifact actually published?</td><td class="partial">Strong evidence</td><td>Active/suppressed status plus valid Artifactory destination</td></tr>
+            <tr><td>When was the whitelist request opened?</td><td class="no">No</td><td>IssueOps/request event</td></tr>
+            <tr><td>Was a malformed request rejected?</td><td class="no">No</td><td>IssueOps/request event</td></tr>
+            <tr><td>When did ingestion or scanning begin?</td><td class="no">No</td><td>Pipeline/scan event</td></tr>
+            <tr><td>Did the runner fail or workflow cancel?</td><td class="no">No</td><td>GitHub Actions event</td></tr>
+            <tr><td>Why did an artifact fail before catalog creation?</td><td class="no">No</td><td>Pipeline event with reason taxonomy</td></tr>
+            <tr><td>What is request-to-approval latency?</td><td class="no">No</td><td>Correlated request and decision timestamps</td></tr>
+            <tr><td>Was a whitelist renewed?</td><td class="partial">Only if modeled</td><td>Explicit renewal fields and events</td></tr>
+          </tbody>
+        </table></div>
+        <div class="danger"><strong>Consequence:</strong> catalog-only dashboards would undercount rejected requests and ingestion failures because attempts that terminate before catalog persistence are invisible.</div>
+      </section>
+
+      <section id="model">
+        <h2>Do not forward full files on every change</h2>
+        <p>The catalog is a current-state database stored in Git. Splunk is an event and analytics platform. The integration must translate state changes into append-only events rather than repeatedly posting complete files.</p>
+        <div class="flow">
+          <div class="node"><b>Catalog commit</b><span>Authoritative JSON changes on <code>main</code></span></div><div class="arrow">→</div>
+          <div class="node"><b>Schema-aware diff</b><span>Compare the before and after commit for each artifact identity</span></div><div class="arrow">→</div>
+          <div class="node green"><b>Normalized Splunk events</b><span>Only additions, transitions, scans, removals, suppression and lifecycle changes</span></div>
+        </div>
+        <h3>Two complementary datasets</h3>
+        <ul>
+          <li><strong>Current-state snapshot:</strong> one controlled initial load, and optionally a periodic reconciliation, containing the latest state of every artifact.</li>
+          <li><strong>Change-event stream:</strong> an event-driven diff for every subsequent authoritative catalog commit.</li>
+        </ul>
+        <p>The snapshot answers “what is whitelisted now?” The change stream answers “what changed, when, and from which previous state?” Keeping these concepts separate prevents historical dashboards from counting the same unchanged artifact every day.</p>
+        <h3>Recommended change types</h3>
+        <pre><code>artifact_added                release_added
+artifact_status_changed       scan_completed
+scan_result_changed           artifact_published
+artifact_scan_gated           suppression_added
+suppression_changed           suppression_expired
+artifact_blacked_out          artifact_restored
+artifact_removed              sunset_date_changed
+catalog_write_completed</code></pre>
+      </section>
+
+      <section id="architecture">
+        <h2>Target hybrid architecture</h2>
+        <div class="sources">
+          <div class="source"><b>Request events</b><span>Initiated, validated, rejected, renewal requested</span></div>
+          <div class="source"><b>GitHub events</b><span>Queued, started, completed, cancelled, duration</span></div>
+          <div class="source"><b>Scan events</b><span>Initiated, completed, failed, severity and duration</span></div>
+          <div class="source"><b>Catalog events</b><span>Final state, publication, release, suppression and lifecycle</span></div>
+        </div>
+        <div class="flow">
+          <div class="node"><b>Four normalized producers</b><span>Shared schema and stable correlation identifiers</span></div><div class="arrow">→</div>
+          <div class="node"><b>Hardened HEC sender</b><span>Batching, validation, TLS, retry, redaction and delivery evidence</span></div><div class="arrow">→</div>
+          <div class="node green"><b>Splunk</b><span>Separate sourcetypes joined by request, artifact and run identifiers</span></div>
+        </div>
+        <p>The composite action remains useful only as the low-level shared HEC sender. Business-event derivation belongs in schema-aware producers. The catalog exporter should run in the catalog repository; request and scan events should be emitted only at a small number of authoritative transition points; operational events should come from a centralized GitHub webhook or Actions collector.</p>
+      </section>
+
+      <section id="metrics">
+        <h2>Acceptance-criteria coverage by phase</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Metric or event</th><th>Catalog-first phase</th><th>Hybrid completion</th><th>Important definition</th></tr></thead>
+          <tbody>
+            <tr><td>Total images whitelisted</td><td class="yes">Supported</td><td>Validated further</td><td>Count latest active or valid suppressed image identities with a publication destination.</td></tr>
+            <tr><td>Weekly/monthly whitelist trend</td><td class="yes">Supported from change events/backfill</td><td>Supported</td><td>Count first transition into whitelisted state, not every rescan.</td></tr>
+            <tr><td>New images approved</td><td class="partial">Final approved/cataloged images</td><td class="yes">Full request decision coverage</td><td>Separate policy approval from successful publication.</td></tr>
+            <tr><td>New releases detected</td><td class="partial">Only releases written to catalog</td><td class="yes">Detection attempts included</td><td>Distinguish detected, processed, and published releases.</td></tr>
+            <tr><td>Vulnerabilities at ingestion</td><td class="partial">Final persisted result</td><td class="yes">Full scan execution coverage</td><td>Record the initial scan separately from later rescans.</td></tr>
+            <tr><td>Severity breakdown</td><td class="yes">Supported where summary exists</td><td class="yes">Supported</td><td>Store numeric Critical/High/Medium/Low fields.</td></tr>
+            <tr><td>Failure rate and reasons</td><td class="no">Incomplete denominator</td><td class="yes">Supported</td><td>Denominator must include every ingestion attempt, including pre-catalog failures.</td></tr>
+            <tr><td>Approval rate</td><td class="no">Rejected requests missing</td><td class="yes">Supported</td><td>Use request decisions, not workflow conclusions.</td></tr>
+            <tr><td>Time-to-approval percentiles</td><td class="no">Request start absent</td><td class="yes">Supported</td><td><code>policy_decision_at - request_initiated_at</code>.</td></tr>
+            <tr><td>Image source distribution</td><td class="yes">Vendor supported</td><td class="yes">Registry normalized</td><td>Keep <code>vendor</code> and <code>source_registry</code> separate.</td></tr>
+            <tr><td>Processing pipeline health</td><td class="no">Not a catalog metric</td><td class="yes">Supported</td><td>Use GitHub workflow/job events.</td></tr>
+            <tr><td>Historical lifecycle/audit</td><td class="partial">Catalog transitions</td><td class="yes">End-to-end timeline</td><td>Append-only events plus explicit expiration/renewal model.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="schema">
+        <h2>Canonical event contract</h2>
+        <p>All sources must use the same correlation model. A GitHub run ID is useful, but cannot be the primary business key because request and lifecycle processing may occur in different runs.</p>
+        <pre><code>{
+  "schema_version": "1.0",
+  "event_id": "deterministic-sha256",
+  "event_type": "artifact_status_changed",
+  "source_type": "catalog_change",
+  "occurred_at": "2026-07-20T16:20:00Z",
+  "observed_at": "2026-07-20T16:20:08Z",
+  "request_id": "issue-1234",
+  "workflow_repository": "icesdlc/RECORE.third-party",
+  "workflow_name": "DockerHub Image Lifecycle",
+  "workflow_run_id": "123456",
+  "workflow_run_attempt": 1,
+  "catalog_commit": "abc123...",
+  "artifact_type": "image",
+  "vendor": "dockerhub",
+  "source_registry": "docker.io",
+  "artifact_name": "library/nginx",
+  "version": "1.27.0",
+  "digest": "sha256:...",
+  "previous_status": "inactive",
+  "catalog_status": "active",
+  "policy_gate": "pass",
+  "publication_status": "published",
+  "artifactory_path": "base-docker-prod/...",
+  "vulnerabilities": {"critical":0,"high":2,"medium":7,"low":4},
+  "reason_category": null
+}</code></pre>
+        <h3>Deterministic identity</h3>
+        <p>Define artifact identity by type and schema—for an image, normally normalized source registry, repository, tag/version, and digest where available. Build <code>event_id</code> from source repository, catalog commit, event type, and artifact identity. Splunk retries then become idempotent.</p>
+        <h3>Structured provenance</h3>
+        <p>Where possible, add workflow repository, workflow run ID, run attempt, request issue, and source-config commit to catalog entries or a companion event manifest. Do not depend on parsing free-form Git commit subjects.</p>
+      </section>
+
+      <section id="splunk">
+        <h2>Splunk data design</h2>
+        <p>Use separate sourcetypes so operational events do not become confused with business state:</p>
+        <ul>
+          <li><code>recore:thirdparty:catalog_state</code> — controlled current-state snapshots</li>
+          <li><code>recore:thirdparty:catalog_change</code> — append-only artifact transitions</li>
+          <li><code>recore:thirdparty:request</code> — request initiation, validation and decision</li>
+          <li><code>recore:thirdparty:scan</code> — scan lifecycle and severity results</li>
+          <li><code>recore:thirdparty:workflow</code> — GitHub operational health</li>
+        </ul>
+        <p>These may share one index initially if retention and access controls are the same, but sourcetypes and field names should remain distinct.</p>
+        <h3>Dashboard calculation rules</h3>
+        <ul>
+          <li><strong>Current total:</strong> latest catalog state per artifact identity, filtered to active or non-expired suppressed entries with a valid Artifactory path.</li>
+          <li><strong>Whitelist trend:</strong> first transition into a published whitelist state during the period.</li>
+          <li><strong>Approval rate:</strong> approved request decisions divided by all terminal request decisions—not successful workflows divided by workflow runs.</li>
+          <li><strong>Ingestion failure rate:</strong> failed terminal ingestion attempts divided by all terminal ingestion attempts.</li>
+          <li><strong>Vulnerable at ingestion:</strong> severity counts from the first completed scan associated with the ingestion attempt, excluding routine rescans.</li>
+          <li><strong>Remediation list:</strong> latest state per artifact where policy gate fails, status is inactive, or suppression is near expiry.</li>
+        </ul>
+      </section>
+
+      <section id="rollout">
+        <h2>Phased implementation plan</h2>
+        <div class="phase"><b>Phase 0</b><p>Inventory the catalog repository. Classify every JSON path as authoritative, derived, configuration, or presentation. Approve schemas, natural keys, status meanings, and the whitelist definition.</p></div>
+        <div class="phase"><b>Phase 1</b><p>Load one current-state snapshot from authoritative catalog files. Validate totals against ICEDevX/catalog expectations. Do not derive historical trends from repeated snapshots.</p></div>
+        <div class="phase"><b>Phase 2</b><p>Deploy the catalog commit-range exporter on <code>main</code> with path filters, deterministic IDs, schema validation, HEC batching, retry, redaction, and non-blocking failure behavior.</p></div>
+        <div class="phase"><b>Phase 3</b><p>Perform one controlled historical backfill from catalog Git history into the catalog-change sourcetype. Record a backfill version and cutoff so live events do not overlap.</p></div>
+        <div class="phase"><b>Phase 4</b><p>Add request events from IssueOps for initiation, validation, approval/rejection and renewal. This establishes correct approval-rate denominators and request timestamps.</p></div>
+        <div class="phase"><b>Phase 5</b><p>Add scan start/completion/failure events and centralized GitHub workflow telemetry. This completes ingestion failures, reason categories, duration percentiles, and pipeline health.</p></div>
+        <div class="phase"><b>Phase 6</b><p>Implement the four dashboards, reconciliation monitoring, dead-letter/replay procedure, schema-version alerts, and compliance retention controls.</p></div>
+      </section>
+
+      <section id="risks">
+        <h2>Principal risks and controls</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Risk</th><th>Impact</th><th>Control</th></tr></thead>
+          <tbody>
+            <tr><td>Ingesting every JSON file</td><td>Duplicates and conflicting sources of truth</td><td>Path allowlist and catalog data classification</td></tr>
+            <tr><td>Posting full files per commit</td><td>Inflated counts and excessive volume</td><td>Schema-aware before/after diff plus separate snapshot sourcetype</td></tr>
+            <tr><td>Force-push or consolidated catalog branches</td><td>Missing or reordered commit transitions</td><td>Trigger only from authoritative <code>main</code>; scheduled reconciliation by commit checkpoint</td></tr>
+            <tr><td>Partial schemas across artifact types</td><td>Incorrect normalization</td><td>Versioned adapters and fixtures for containers, charts, libraries, and packages</td></tr>
+            <tr><td>Splunk outage</td><td>Lost telemetry or blocked publication</td><td>Never block publication; retry, durable delivery evidence, reconciliation and replay</td></tr>
+            <tr><td>Catalog-only denominator</td><td>False approval and failure rates</td><td>Add request and ingestion attempt events before certifying those metrics</td></tr>
+            <tr><td>Ambiguous expiration</td><td>Incorrect compliance status</td><td>Define whitelist expiry separately from vendor sunset and suppression expiry</td></tr>
+            <tr><td>Free-form failure text</td><td>Unstable reports</td><td>Normalized reason taxonomy plus sanitized detail</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="final" class="decision">
+        <h2>Final recommendation</h2>
+        <p><strong>Proceed with a catalog-first hybrid architecture.</strong> Begin with an allowlisted set of authoritative catalog JSON files, not the generated metrics products and not every JSON file in the repository. Establish a current-state snapshot and an incremental catalog-change stream as the foundation for business, vulnerability, vendor, remediation, and audit metrics.</p>
+        <p>Then add IssueOps request events, scan lifecycle events, and centralized GitHub operational events. These additions are not architectural replacements; they complete the acceptance criteria that catalog data cannot observe, especially rejected requests, pre-catalog failures, scan initiation, pipeline health, and time-to-approval percentiles.</p>
+        <blockquote>The recommendation has not changed from hybrid to catalog-only. It has become more precise: catalog data is the first and authoritative business-outcome layer; the hybrid sources are added deliberately to complete the event lifecycle.</blockquote>
+      </section>
+    </main>
+  </div>
+  <footer>Prepared from the RECORE.third-party workflows and architecture available in the current workspace. Exact catalog paths and schemas require validation in RECORE.third-party-catalog before implementation.</footer>
+</body>
+</html>
