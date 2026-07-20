@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Existing Catalog Metrics Implementation and Recommended Design</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #5d6d79;
+      --navy: #102a43;
+      --blue: #1769aa;
+      --blue-soft: #eaf4fb;
+      --green: #18784b;
+      --green-soft: #eaf7ef;
+      --amber: #956100;
+      --amber-soft: #fff5dd;
+      --line: #d9e2e8;
+      --paper: #fff;
+      --wash: #f3f6f8;
+      --shadow: 0 14px 42px rgba(16, 42, 67, .09);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--ink); background: var(--wash); font: 16px/1.64 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    header { padding: 62px 24px 54px; color: white; background: linear-gradient(135deg, #102a43, #1769aa); }
+    header div, main, footer { max-width: 980px; margin: auto; }
+    header p { max-width: 850px; margin: 0; color: #e3f0f8; font-size: clamp(1.25rem, 3vw, 1.75rem); line-height: 1.4; font-weight: 720; }
+    main { padding: 38px 24px 70px; }
+    section { margin-bottom: 30px; padding: 29px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); }
+    h1 { margin: 0 0 16px; color: var(--navy); font-size: 2rem; letter-spacing: -.03em; }
+    h2 { margin: 27px 0 10px; color: var(--navy); font-size: 1.35rem; }
+    h2:first-child { margin-top: 0; }
+    h3 { margin: 23px 0 9px; color: var(--blue); font-size: 1.08rem; }
+    p { margin: 10px 0; }
+    ul, ol { padding-left: 1.35rem; }
+    li + li { margin-top: 7px; }
+    .foundation { border-left: 6px solid var(--green); background: linear-gradient(90deg, var(--green-soft), white 38%); }
+    .gap { margin: 20px 0; padding: 17px 19px; border-left: 4px solid var(--amber); border-radius: 10px; background: var(--amber-soft); }
+    .gap h2 { margin: 0 0 7px; color: var(--amber); font-size: 1.08rem; }
+    .design { border-top: 5px solid var(--blue); }
+    .recommendation { border-left: 6px solid var(--green); background: linear-gradient(90deg, var(--green-soft), white 42%); }
+    code { padding: 2px 5px; border-radius: 4px; background: #edf2f5; color: #7c2b38; }
+    pre { overflow: auto; margin: 17px 0; padding: 20px; border-radius: 12px; background: #111d29; color: #dcebf6; font-size: .86rem; line-height: 1.55; }
+    pre code { padding: 0; color: inherit; background: transparent; }
+    footer { padding: 0 24px 42px; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 700px) { section { padding: 21px; } header { padding-top: 46px; } }
+    @media print { body { background: white; } header { padding: 30px 0; } main { padding: 24px 0; } section { box-shadow: none; break-inside: avoid; } footer { padding: 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><p>I would only use a composite action as the low-level, shared Splunk HEC sender—not as something manually added to every scan and publication job.</p></div>
+  </header>
+
+  <main>
+    <section class="foundation">
+      <h1>Existing catalog metrics implementation</h1>
+      <p>There is already a strong foundation:</p>
+      <ul>
+        <li><a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/metrics-catalog.yml:1">metrics-catalog.yml (line 1)</a> clones the catalog with full history.</li>
+        <li><a href="/Users/gilbertomendez/RECORE.third-party/scripts/metrics/extract_from_catalog_commits.py:42">extract_from_catalog_commits.py (line 42)</a> walks commits touching catalog JSON files.</li>
+        <li>It produces normalized <code>software_added</code>, <code>release_added</code>, and <code>scan_updated</code> records.</li>
+        <li>Events include vendor, software, tag, scan counts, policy gate, Artifactory path, commit, and sometimes workflow run ID; see <a href="/Users/gilbertomendez/RECORE.third-party/scripts/metrics/extract_from_catalog_commits.py:113">extract_from_catalog_commits.py (line 113)</a>.</li>
+      </ul>
+      <p>This is the best starting point for Splunk business reports, but it is not ready unchanged.</p>
+    </section>
+
+    <section>
+      <h1>Gaps that should be fixed</h1>
+
+      <div class="gap">
+        <h2>The workflow is not event-driven by catalog changes.</h2>
+        <p>Its push trigger applies to this automation repository, not the separately checked-out catalog repository. Catalog updates therefore reach metrics through the daily schedule, unless this source repository also happens to receive a push. See <a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/metrics-catalog.yml:3">metrics-catalog.yml (line 3)</a>.</p>
+      </div>
+
+      <div class="gap">
+        <h2>It rebuilds all history every day.</h2>
+        <p>Each run checks out the full history and reconstructs every version of every catalog file. That will become progressively slower and creates repeated Splunk delivery unless forwarding implements checkpoints and deterministic IDs.</p>
+      </div>
+
+      <div class="gap">
+        <h2>The extractor omits library catalogs.</h2>
+        <p>It scans only:</p>
+        <ul>
+          <li><code>vendor-catalog/containers</code></li>
+          <li><code>vendor-catalog/charts</code></li>
+          <li><code>vendor-catalog/packages</code></li>
+        </ul>
+        <p>See <a href="/Users/gilbertomendez/RECORE.third-party/scripts/metrics/extract_from_catalog_commits.py:380">extract_from_catalog_commits.py (line 380)</a>. The architecture says npm and PyPI write under <code>vendor-catalog/library</code>, so those results would not reach Splunk.</p>
+      </div>
+
+      <div class="gap">
+        <h2>It does not emit removals or blackout events.</h2>
+        <p>The comparisons find additions and security changes, but do not detect removed releases, status-only changes in all schemas, blackout reasons, restored artifacts, suppression changes, or suppression expiry.</p>
+      </div>
+
+      <div class="gap">
+        <h2>Package scan detection is incomplete.</h2>
+        <p>Container events compare both <code>scanned_date</code> and <code>policy_gate</code>, while packages compare only <code>policy_gate</code>. Two package scans with the same outcome are therefore invisible.</p>
+      </div>
+
+      <div class="gap">
+        <h2><code>run_id</code> correlation is best-effort.</h2>
+        <p>It is parsed from the commit subject using <code>run &lt;digits&gt;</code>. See <a href="/Users/gilbertomendez/RECORE.third-party/scripts/metrics/extract_from_catalog_commits.py:82">extract_from_catalog_commits.py (line 82)</a>. Some workflows follow this convention, but it is not enforced across every catalog writer.</p>
+      </div>
+
+      <div class="gap">
+        <h2>Event time is ambiguous.</h2>
+        <p><code>timestamp</code> is the catalog commit time, while <code>scanned_date</code> is separate. Splunk should preserve both as <code>observed_at</code> and <code>occurred_at</code>; otherwise dashboards can report activity in the wrong interval.</p>
+      </div>
+
+      <div class="gap">
+        <h2>The current metrics workflow modifies the catalog.</h2>
+        <p>It generates reports and commits them back to the catalog at <a href="/Users/gilbertomendez/RECORE.third-party/.github/workflows/metrics-catalog.yml:59">metrics-catalog.yml (line 59)</a>. Splunk forwarding should not require writing generated metrics into the source-of-truth repository.</p>
+      </div>
+    </section>
+
+    <section class="design">
+      <h1>Recommended design</h1>
+
+      <h2>1. Catalog outcome exporter</h2>
+      <p>Run this from <code>RECORE.third-party-catalog</code>, triggered by catalog changes on <code>main</code>, with path filters for the authoritative JSON directories.</p>
+      <p>It should:</p>
+      <ul>
+        <li>Compare the pushed commit range, rather than replay all history.</li>
+        <li>Normalize artifact events across images, Helm, libraries, and packages.</li>
+        <li>POST batches to Splunk HEC.</li>
+        <li>Use deterministic event IDs for idempotency.</li>
+        <li>Retry transient failures with backoff.</li>
+        <li>Save a delivery artifact/log, but never expose the HEC token.</li>
+        <li>Optionally run a scheduled reconciliation to recover missed pushes.</li>
+      </ul>
+      <p>Suggested event types:</p>
+      <ul>
+        <li><code>artifact_requested</code></li>
+        <li><code>artifact_discovered</code></li>
+        <li><code>scan_completed</code></li>
+        <li><code>artifact_published</code></li>
+        <li><code>artifact_scan_gated</code></li>
+        <li><code>artifact_suppressed</code></li>
+        <li><code>artifact_blacked_out</code></li>
+        <li><code>artifact_removed</code></li>
+        <li><code>artifact_restored</code></li>
+        <li><code>catalog_write_completed</code></li>
+      </ul>
+      <p>For final-state reporting, <code>artifact_published</code> should require catalog status <code>active</code> or <code>suppressed</code> and a valid Artifactory destination—not merely a successful workflow.</p>
+
+      <h2>2. Central GitHub Actions collector</h2>
+      <p>Add one centralized workflow using <code>workflow_run: completed</code> for the production workflow names. It should send one operational record per completed run to Splunk:</p>
+      <ul>
+        <li>repository and workflow</li>
+        <li>run ID and attempt</li>
+        <li>event type</li>
+        <li>actor</li>
+        <li>branch and SHA</li>
+        <li>created, started, and completed timestamps</li>
+        <li>conclusion</li>
+        <li>run URL</li>
+        <li>triggering issue/request number when available</li>
+      </ul>
+      <p>If job-level failure reporting is required, it can query the Actions API for job names, durations, and failed steps.</p>
+      <p>This captures failures and cancellations that never produce a catalog commit. It avoids editing every lifecycle workflow.</p>
+      <p>If GHES supports reliable organization/repository webhooks to an internal collector, a GitHub App/webhook receiver is even stronger than <code>workflow_run</code>, particularly for queued and in-progress events. The receiver can relay to Splunk independently of runner availability.</p>
+
+      <h2>3. Correlation contract</h2>
+      <p>Make these fields mandatory across both streams:</p>
+      <pre><code>{
+  "schema_version": "1.0",
+  "event_id": "sha256-of-source-and-natural-key",
+  "source": "github_actions|third_party_catalog",
+  "repository": "icesdlc/RECORE.third-party",
+  "workflow_name": "DockerHub Image Lifecycle",
+  "run_id": "123456",
+  "run_attempt": 1,
+  "request_issue": 1234,
+  "artifact_type": "image",
+  "vendor": "dockerhub",
+  "artifact": "library/nginx",
+  "version": "1.27.0",
+  "scan_gate": "pass",
+  "catalog_status": "active",
+  "publication_status": "published",
+  "occurred_at": "...",
+  "observed_at": "..."
+}</code></pre>
+      <p>The most important implementation change is to stop deriving <code>run_id</code> from free-form commit messages. Write structured provenance into catalog entries or into a small commit-side event manifest:</p>
+      <ul>
+        <li><code>workflow_repository</code></li>
+        <li><code>workflow_name</code></li>
+        <li><code>workflow_run_id</code></li>
+        <li><code>workflow_run_attempt</code></li>
+        <li><code>request_issue</code></li>
+        <li><code>source_config_commit</code></li>
+      </ul>
+    </section>
+
+    <section class="recommendation">
+      <h1>Final recommendation</h1>
+      <p>Use the catalog-forwarding approach as the primary source for business and compliance reports because it represents the real artifact outcome. Add a centralized <code>workflow_run</code> or GitHub webhook collector for Actions reliability and performance reports.</p>
+      <p>Do not instrument every lifecycle workflow with a Splunk composite action. If a composite action is created, limit it to a reusable, hardened HEC delivery implementation used by the two centralized exporters.</p>
+      <p>A sensible rollout would be:</p>
+      <ol>
+        <li>Define the event schema and Splunk index/sourcetypes.</li>
+        <li>Extend the extractor to support incremental commit ranges, libraries, removals, suppression, blackout, and deterministic IDs.</li>
+        <li>Move catalog export triggering to the catalog repository.</li>
+        <li>Add the centralized Actions completion collector.</li>
+        <li>Backfill historical catalog events once.</li>
+        <li>Enable scheduled reconciliation and delivery monitoring.</li>
+      </ol>
+      <p>This gives accurate reports without coupling Splunk availability to the critical scan-and-publish path. No repository files were changed during this review.</p>
+    </section>
+  </main>
+
+  <footer></footer>
+</body>
+</html>
