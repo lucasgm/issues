@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Direct Catalog JSON to Splunk Recommendation</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #5d6d79;
+      --navy: #102a43;
+      --blue: #1769aa;
+      --blue-soft: #eaf4fb;
+      --green: #18784b;
+      --green-soft: #eaf7ef;
+      --amber: #956100;
+      --amber-soft: #fff5dd;
+      --line: #d9e2e8;
+      --paper: #fff;
+      --wash: #f3f6f8;
+      --shadow: 0 14px 42px rgba(16, 42, 67, .09);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--ink); background: var(--wash); font: 16px/1.64 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    header { padding: 62px 24px 54px; color: white; background: linear-gradient(135deg, #102a43, #1769aa 72%, #18784b 135%); }
+    header div, .layout, footer { max-width: 1080px; margin: auto; }
+    header p { max-width: 850px; margin: 0; color: #fff; font-size: clamp(1.65rem, 4vw, 2.8rem); line-height: 1.2; font-weight: 780; letter-spacing: -.035em; }
+    .layout { padding: 38px 24px 72px; }
+    main { min-width: 0; }
+    section { margin-bottom: 30px; padding: 29px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); }
+    h2 { margin: 0 0 14px; color: var(--navy); font-size: 1.65rem; letter-spacing: -.025em; }
+    p { margin: 10px 0; }
+    ul, ol { padding-left: 1.35rem; }
+    li + li { margin-top: 7px; }
+    .opening { border-left: 6px solid var(--green); background: linear-gradient(90deg, var(--green-soft), white 42%); }
+    .distinction { border-left: 6px solid var(--amber); background: linear-gradient(90deg, var(--amber-soft), white 42%); }
+    code { padding: 2px 5px; border-radius: 4px; background: #edf2f5; color: #7c2b38; }
+    pre { overflow: auto; margin: 17px 0; padding: 20px; border-radius: 12px; background: #111d29; color: #dcebf6; font-size: .86rem; line-height: 1.55; }
+    pre code { padding: 0; color: inherit; background: transparent; }
+    blockquote { margin: 20px 0 0; padding: 19px 21px; border-left: 5px solid var(--green); border-radius: 10px; background: var(--green-soft); color: #185638; font-size: 1.08rem; font-weight: 760; }
+    footer { padding: 0 24px 42px; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 800px) { section { padding: 21px; } }
+    @media print { body { background: white; } header { padding: 34px 0; } .layout { padding: 24px 0; } section { box-shadow: none; break-inside: avoid; } footer { padding: 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <p>I agree with your interpretation.</p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main>
+      <section id="interpretation" class="opening">
+        <p><code>metrics-catalog.yml</code> is a local reporting workflow, not part of the core catalog production flow and not the best component to forward data to Splunk.</p>
+        <p>It currently:</p>
+        <ol>
+          <li>Clones the catalog repository with full history.</li>
+          <li>Generates:
+            <ul>
+              <li><code>additions.ndjson</code></li>
+              <li><code>scans.ndjson</code></li>
+              <li><code>all-events.ndjson</code></li>
+            </ul>
+          </li>
+          <li>Uses those generated files to build:
+            <ul>
+              <li><code>REPORT.md</code></li>
+              <li><code>DASHBOARD.html</code></li>
+            </ul>
+          </li>
+          <li>Commits selected report outputs back into the catalog repository.</li>
+        </ol>
+        <p>Notably, <code>scans.ndjson</code> and <code>all-events.ndjson</code> are explicitly excluded from Git because they become too large. Therefore, this pipeline is designed primarily for regenerated local reports, not durable event forwarding.</p>
+      </section>
+
+      <section id="revised">
+        <h2>Revised recommendation</h2>
+        <p>Splunk should not consume:</p>
+        <ul>
+          <li><code>metrics/events/additions.ndjson</code></li>
+          <li><code>metrics/events/scans.ndjson</code></li>
+          <li><code>metrics/events/all-events.ndjson</code></li>
+          <li><code>metrics/REPORT.md</code></li>
+          <li><code>metrics/DASHBOARD.html</code></li>
+        </ul>
+        <p>Splunk should instead consume changes to the authoritative catalog JSON files, such as:</p>
+        <pre><code>vendor-catalog/containers/*.json
+vendor-catalog/charts/*.json
+vendor-catalog/library/*.json
+vendor-catalog/packages/*.json</code></pre>
+        <p>The exact paths should be confirmed against the catalog repository.</p>
+      </section>
+
+      <section id="distinction" class="distinction">
+        <h2>Important distinction</h2>
+        <p>Sending the complete JSON files to Splunk after every update is possible, but it may cause:</p>
+        <ul>
+          <li>Duplicate records</li>
+          <li>Large payloads</li>
+          <li>Difficulty distinguishing new entries from modified entries</li>
+          <li>Incorrect historical counts</li>
+          <li>Repeated vulnerability data</li>
+          <li>Difficulty detecting removals</li>
+        </ul>
+        <p>A better model is:</p>
+        <pre><code>Catalog JSON change
+        │
+        ▼
+Compare previous commit with current commit
+        │
+        ▼
+Generate only changed artifact events
+        │
+        ▼
+Send changed events to Splunk HEC</code></pre>
+        <p>For example, when a container JSON changes, the exporter should classify each difference as:</p>
+        <pre><code>artifact_added
+release_added
+scan_updated
+status_changed
+artifact_removed
+artifact_blacked_out
+suppression_added
+suppression_expired
+whitelist_expired
+whitelist_renewed</code></pre>
+        <p>The existing <code>extract_from_catalog_commits.py</code> can be used as a reference for understanding the catalog schemas and comparison logic, but the Splunk implementation should not depend on the generated NDJSON report files.</p>
+      </section>
+
+      <section id="exporter">
+        <h2>Recommended catalog exporter</h2>
+        <p>The exporter should run from <code>RECORE.third-party-catalog</code> when authoritative files change on <code>main</code>:</p>
+        <pre><code>on:
+  push:
+    branches: [main]
+    paths:
+      - "vendor-catalog/containers/**"
+      - "vendor-catalog/charts/**"
+      - "vendor-catalog/library/**"
+      - "vendor-catalog/packages/**"</code></pre>
+        <p>It should compare:</p>
+        <pre><code>github.event.before → github.sha</code></pre>
+        <p>This allows it to send only the changes introduced by that catalog update.</p>
+        <p>A scheduled reconciliation workflow can remain as a recovery mechanism, but normal Splunk delivery should be event-driven.</p>
+      </section>
+
+      <section id="outside">
+        <h2>What remains outside the catalog</h2>
+        <p>The catalog can supply authoritative final outcomes, including:</p>
+        <ul>
+          <li>Image published</li>
+          <li>Image active/inactive/suppressed</li>
+          <li>New image or release</li>
+          <li>Scan severity information</li>
+          <li>Scan-gate status</li>
+          <li>Artifactory destination</li>
+          <li>Blackout or removal, when represented in the catalog</li>
+          <li>Expiration or renewal, if those fields are added</li>
+        </ul>
+        <p>But it cannot reliably supply:</p>
+        <ul>
+          <li>Whitelist request initiated</li>
+          <li>Validation failures before catalog creation</li>
+          <li>Ingestion attempt started</li>
+          <li>Vulnerability scan initiated</li>
+          <li>Workflow cancellation</li>
+          <li>Runner or infrastructure failure</li>
+          <li>Request rejected before reaching the catalog</li>
+          <li>Detailed pipeline duration</li>
+        </ul>
+        <p>Those still require request and GitHub Actions events.</p>
+      </section>
+
+      <section id="architecture">
+        <h2>Corrected architecture</h2>
+        <pre><code>IssueOps / request workflow
+    └── request initiated, validation, early rejection
+
+GitHub Actions collector
+    └── workflow started, completed, failed, cancelled, duration
+
+Scan instrumentation
+    └── scan initiated, completed, failed
+
+Authoritative catalog JSON changes
+    └── published, gated, suppressed, removed, new release, final scan state
+                         │
+                         ▼
+                     Splunk HEC</code></pre>
+        <p>So the corrected conclusion is:</p>
+        <blockquote>Do not use <code>metrics-catalog.yml</code> or its generated NDJSON files as the Splunk source. Read changes directly from the authoritative catalog JSON files. Reuse only the extractor’s schema knowledge and diffing ideas where helpful.</blockquote>
+        <p>This also avoids coupling Splunk ingestion to a separate reporting workflow that runs daily and regenerates historical metrics.</p>
+      </section>
+    </main>
+  </div>
+
+  <footer></footer>
+</body>
+</html>
