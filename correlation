@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Telemetry Event Correlation Strategy</title>
+  <style>
+    :root{color-scheme:light;--ink:#17212b;--muted:#5d6d79;--navy:#102a43;--blue:#1769aa;--green:#18784b;--amber:#956100;--red:#a63838;--line:#d9e2e8;--paper:#fff;--wash:#f3f6f8;--blue-soft:#eaf4fb;--green-soft:#eaf7ef;--amber-soft:#fff5dd;--shadow:0 14px 42px rgba(16,42,67,.09)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--wash);font:16px/1.63 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}code{padding:2px 5px;border-radius:4px;background:#edf2f5;color:#7c2b38}
+    .hero{padding:66px 24px 58px;color:#fff;background:linear-gradient(135deg,#102a43,#1769aa 67%,#18784b 145%)}.hero-inner,.layout,footer{max-width:1160px;margin:auto}.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.76rem;font-weight:850;opacity:.77}.hero h1{max-width:920px;margin:12px 0 16px;font-size:clamp(2.3rem,5vw,4rem);line-height:1.06;letter-spacing:-.045em}.hero p{max-width:880px;margin:0;color:#e0eef7;font-size:1.16rem}.badge{display:inline-flex;align-items:center;gap:10px;margin-top:27px;padding:10px 15px;border:1px solid rgba(255,255,255,.27);border-radius:999px;background:rgba(255,255,255,.1);font-weight:780}.dot{width:10px;height:10px;border-radius:50%;background:#67dfa5;box-shadow:0 0 0 5px rgba(103,223,165,.16)}
+    .layout{display:grid;grid-template-columns:235px minmax(0,1fr);gap:34px;padding:38px 24px 72px}nav{position:sticky;top:20px;align-self:start;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--shadow)}nav strong{display:block;margin-bottom:8px;color:var(--navy)}nav a{display:block;padding:7px 9px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:.91rem}nav a:hover{color:var(--blue);background:var(--blue-soft)}main{min-width:0}section{margin-bottom:32px;padding:30px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:var(--shadow)}h2{margin:0 0 14px;color:var(--navy);font-size:1.7rem;letter-spacing:-.025em}h3{margin:25px 0 8px;color:var(--navy);font-size:1.1rem}p{margin:10px 0}ul,ol{padding-left:1.3rem}li+li{margin-top:7px}
+    .decision{border-left:6px solid var(--green);background:linear-gradient(90deg,var(--green-soft),#fff 42%)}.decision strong{color:var(--green)}.callout{margin:20px 0;padding:16px 18px;border-left:4px solid var(--amber);border-radius:10px;background:var(--amber-soft)}.callout strong{color:var(--amber)}.table-wrap{overflow-x:auto;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:.92rem}th{color:#fff;background:var(--navy);text-align:left}th,td{padding:12px 13px;border:1px solid var(--line);vertical-align:top}tbody tr:nth-child(even){background:#f8fafb}
+    pre{overflow:auto;margin:17px 0;padding:20px;border-radius:12px;background:#111d29;color:#dcebf6;font-size:.84rem;line-height:1.55}pre code{padding:0;color:inherit;background:transparent}.flow{display:grid;grid-template-columns:1fr 42px 1fr 42px 1fr 42px 1fr;align-items:stretch;margin:22px 0}.node{padding:17px;border:1px solid #a6c6da;border-radius:11px;background:var(--blue-soft)}.node.green{border-color:#9bc9aa;background:var(--green-soft)}.node b{display:block;color:var(--navy);margin-bottom:4px}.node span{color:var(--muted);font-size:.87rem}.arrow{display:grid;place-items:center;color:var(--blue);font-size:1.4rem;font-weight:900}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin:18px 0}.card{padding:17px;border:1px solid var(--line);border-radius:11px;background:#fbfcfd}.card b{display:block;color:var(--blue);margin-bottom:5px}.card span{color:var(--muted);font-size:.88rem}blockquote{margin:20px 0 0;padding:20px 22px;border-left:5px solid var(--green);border-radius:10px;background:var(--green-soft);color:#185638;font-size:1.08rem;font-weight:760}footer{padding:0 24px 42px;color:var(--muted);font-size:.9rem}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}nav{position:static}.flow{grid-template-columns:1fr}.arrow{min-height:40px;transform:rotate(90deg)}.cards{grid-template-columns:1fr 1fr}}@media(max-width:620px){.cards{grid-template-columns:1fr}section{padding:21px}}@media print{body{background:#fff}.hero{padding:35px 0}.layout{display:block;padding:24px 0}nav{display:none}section{box-shadow:none;break-inside:avoid}footer{padding:0}}
+  </style>
+</head>
+<body>
+  <header class="hero"><div class="hero-inner"><div class="eyebrow">RECORE third-party telemetry</div><h1>Event correlation and identity strategy</h1><p>How request, artifact, scan, workflow, scheduled, and catalog events are joined without treating event uniqueness as lifecycle correlation.</p><div class="badge"><span class="dot"></span> Correlation is required—but not every event needs every identifier</div></div></header>
+  <div class="layout">
+    <nav aria-label="Sections"><strong>Contents</strong><a href="#answer">Direct answer</a><a href="#identifiers">Identifier model</a><a href="#request">Request-driven events</a><a href="#scheduled">Scheduled events</a><a href="#propagation">Workflow propagation</a><a href="#without">Initial pilot</a><a href="#workflow">Workflow and scan joins</a><a href="#metrics">Metrics mapping</a><a href="#retention">40-day retention</a><a href="#rules">Final rules</a></nav>
+    <main>
+      <section id="answer" class="decision"><h2>Direct answer</h2><p><strong>Yes, correlation is required to satisfy several telemetry requirements—but not every event needs to carry every identifier.</strong></p><p>The solution is to use multiple identifiers, each serving a different purpose. <code>event_id</code> alone is not the correlation mechanism. It uniquely identifies one event. <code>correlation_id</code> connects related events.</p><div class="table-wrap"><table><thead><tr><th>Identifier</th><th>Represents</th><th>Used for</th></tr></thead><tbody><tr><td><code>event_id</code></td><td>One specific event occurrence</td><td>Deduplication and retry safety</td></tr><tr><td><code>correlation_id</code></td><td>One artifact-processing journey</td><td>Joining request → scan → decision → publication</td></tr><tr><td><code>artifact_id</code></td><td>One resolved artifact/version</td><td>Inventory, vulnerabilities, releases, remediation</td></tr><tr><td><code>request_issue</code></td><td>The GitHub issue</td><td>Request reporting and navigation</td></tr><tr><td><code>source_run_id</code></td><td>A GitHub Actions run</td><td>Operational health and logs</td></tr><tr><td><code>scan_id</code></td><td>One scan attempt</td><td>Scan duration, retries, and results</td></tr></tbody></table></div>
+        <h3>Why correlation is necessary</h3><p>These requirements depend on joining multiple events:</p><ul><li>Time-to-approval</li><li>Approval versus rejection rate</li><li>Complete image lifecycle timeline</li><li>Request initiation followed by final outcome</li><li>Scan initiation followed by scan completion</li><li>Ingestion attempt followed by success or failure</li><li>Failure categorization by request or artifact</li><li>Scheduled discovery followed by publication</li><li>Workflow failure connected to affected artifacts</li></ul>
+        <pre><code>request_initiated
+        │
+        ├── correlation_id = corr_abc123
+        ▼
+scheduled_ingestion_started
+        │
+        ├── correlation_id = corr_abc123
+        ▼
+vulnerability_scan_completed
+        │
+        ├── correlation_id = corr_abc123
+        ▼
+catalog_publish
+        └── correlation_id = corr_abc123</code></pre>
+        <p>Splunk can reconstruct the lifecycle because all four events share the same <code>correlation_id</code>.</p>
+        <h3>Events that do not require request correlation</h3><p>Some metrics only require <code>artifact_id</code>, including current images whitelisted, current remediation list, vendor distribution, latest vulnerability state, current catalog status, and current suppression state.</p><pre><code>{
+  "event_type": "reconciliation_snapshot",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "catalog_status": "active",
+  "request_issue": null
+}</code></pre><p>A reconciliation snapshot describes current state, not a request journey.</p></section>
+
+      <section id="identifiers"><h2>Recommended identity model</h2>
+        <div class="cards"><div class="card"><b>event_id</b><span>Unique event occurrence and deduplication</span></div><div class="card"><b>correlation_id</b><span>Processing journey for one requested or discovered item</span></div><div class="card"><b>artifact_id</b><span>Resolved artifact/version identity</span></div><div class="card"><b>source_run_id</b><span>GitHub Actions execution</span></div><div class="card"><b>scan_id</b><span>Individual scan attempt</span></div><div class="card"><b>snapshot_id</b><span>One reconciliation observation set</span></div></div>
+        <h3>1. event_id</h3><p>Identifies one event and supports deduplication:</p><pre><code>event_id = SHA-256(canonical event identity)</code></pre><p>Example:</p><pre><code>{
+  "event_id": "evt_91d...",
+  "event_type": "vulnerability_scan_completed"
+}</code></pre>
+        <h3>2. correlation_id</h3><p>Identifies one processing journey for one artifact. For an issue-driven request:</p><pre><code>correlation_id =
+  SHA-256(
+    request repository +
+    issue number +
+    request workflow run ID +
+    item index
+  )</code></pre><p>Including the request workflow run ID distinguishes an edited or retried issue from its previous execution. Including the item index distinguishes multiple images in one issue.</p>
+        <h3>3. artifact_id</h3><p>Identifies the resolved artifact:</p><pre><code>artifact_kind + source registry + artifact name + resolved version</code></pre><p>Example:</p><pre><code>container|dockerhub|library/nginx|1.28.0</code></pre><p>When appropriate, also carry the digest:</p><pre><code>{
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "artifact_digest": "sha256:..."
+}</code></pre><p>Do not make the digest universally mandatory because libraries and some package formats may not have one in the catalog.</p>
+        <h3>4. source_run_id</h3><p>Identifies the workflow execution:</p><pre><code>{
+  "source_run_id": "18452001",
+  "source_run_attempt": 1
+}</code></pre><p>This connects artifact events to operational workflow telemetry.</p>
+      </section>
+
+      <section id="request"><h2>Request-driven correlation</h2><p>Consider issue <code>4821</code>, which requests two images:</p><pre><code>1. nginx:1.28.0
+2. redis:8.0.0</code></pre><p>Generate one correlation ID per item:</p><pre><code>Issue 4821
+  ├── nginx → corr_A
+  └── redis → corr_B</code></pre><p>Request events:</p><pre><code>{
+  "event_type": "request_initiated",
+  "correlation_id": "corr_A",
+  "request_issue": 4821,
+  "requested_artifact": "docker.io/library/nginx:1.28.0",
+  "source_run_id": "10001"
+}
+
+{
+  "event_type": "request_initiated",
+  "correlation_id": "corr_B",
+  "request_issue": 4821,
+  "requested_artifact": "docker.io/library/redis:8.0.0",
+  "source_run_id": "10001"
+}</code></pre><p>Final outcomes:</p><pre><code>{
+  "event_type": "catalog_publish",
+  "correlation_id": "corr_A",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "request_issue": 4821,
+  "source_run_id": "20001"
+}
+
+{
+  "event_type": "catalog_scan_gated",
+  "correlation_id": "corr_B",
+  "artifact_id": "container|dockerhub|library/redis|8.0.0",
+  "request_issue": 4821,
+  "source_run_id": "20001"
+}</code></pre><p>Splunk can now determine that the same issue produced one approval and one rejection. Using only <code>request_issue=4821</code> would not be sufficient because it would not distinguish the two artifacts.</p></section>
+
+      <section id="scheduled"><h2>Scheduled-run correlation</h2><p>Scheduled runs do not have a request issue. Generate the correlation ID from the scheduled processing execution:</p><pre><code>correlation_id =
+  SHA-256(
+    workflow repository +
+    workflow run ID +
+    run attempt +
+    artifact item index
+  )</code></pre><p>Example:</p><pre><code>{
+  "event_type": "release_detected",
+  "correlation_id": "corr_scheduled_123",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "trigger_type": "schedule",
+  "request_issue": null,
+  "source_run_id": "30001"
+}</code></pre><p>The later scan and catalog events carry the same value:</p><pre><code>{
+  "event_type": "vulnerability_scan_completed",
+  "correlation_id": "corr_scheduled_123",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "source_run_id": "30001"
+}
+
+{
+  "event_type": "catalog_publish",
+  "correlation_id": "corr_scheduled_123",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "source_run_id": "30001"
+}</code></pre><p>This supports:</p><pre><code>time_to_ingest = cataloged_at - detected_at</code></pre><p>No issue number is required.</p></section>
+
+      <section id="propagation"><h2>How to propagate correlation across workflows</h2><p>This is the main implementation challenge.</p>
+        <h3>Step 1: Generate IDs during request parsing</h3><p>In <code>image-request-ops.yml</code>, after the image list has been validated, add a stable item index and generate a correlation ID for each item.</p><pre><code>[
+  {
+    "item_index": 0,
+    "correlation_id": "corr_A",
+    "requested_artifact": "docker.io/library/nginx:1.28.0"
+  },
+  {
+    "item_index": 1,
+    "correlation_id": "corr_B",
+    "requested_artifact": "docker.io/library/redis:8.0.0"
+  }
+]</code></pre>
+        <h3>Step 2: Send request events</h3><p>The request workflow builds an NDJSON batch such as <code>request-events.ndjson</code>. The composite action sends it to Splunk.</p>
+        <h3>Step 3: Pass context to the lifecycle workflow</h3><p>For complete scan-level correlation, the lifecycle workflow must receive the mapping. Recommended options, in order:</p><ol><li>Add an optional <code>telemetry_context</code> input to the dispatched lifecycle workflow.</li><li>Pass a reference to a telemetry-context artifact or manifest.</li><li>Store the mapping in another temporary, controlled workflow data store.</li></ol><p>An optional workflow input is generally the simplest:</p><pre><code>on:
+  workflow_dispatch:
+    inputs:
+      telemetry_context:
+        required: false
+        type: string</code></pre><p>The request workflow passes a compact JSON correlation map when dispatching the lifecycle workflow. No catalog JSON schema change is required.</p>
+        <h3>Step 4: Carry correlation through matrix items</h3><p>When building the scan matrix, include:</p><pre><code>{
+  "artifact": "library/nginx",
+  "version": "1.28.0",
+  "correlation_id": "corr_A"
+}</code></pre><p>Each matrix job then has the correct correlation value.</p>
+        <h3>Step 5: Preserve it in result artifacts</h3><p>Scan result metadata should contain:</p><pre><code>{
+  "correlation_id": "corr_A",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "scan_id": "scan_123",
+  "policy_gate": "pass"
+}</code></pre><p>The consolidation job downloads the result files and builds the final Splunk batch.</p>
+      </section>
+
+      <section id="without"><h2>If correlation context is not propagated</h2><p>For the first image-only phase, <code>image-request-ops.yml</code> can still correlate:</p><ul><li><code>request_initiated</code></li><li><code>catalog_publish</code></li><li><code>catalog_scan_gated</code></li><li><code>catalog_eol_block</code></li></ul><p>The same request workflow creates the initial events, waits for the lifecycle, and reads the final catalog state.</p><p>However, scan events emitted inside the dispatched lifecycle would only be joinable by <code>artifact_id</code> and lifecycle <code>source_run_id</code>. They would not have the same request correlation unless the context is passed.</p><div class="callout"><strong>Pilot boundary:</strong> this may be acceptable for an initial image-only pilot, but it does not satisfy the final end-to-end lifecycle requirement.</div></section>
+
+      <section id="workflow"><h2>Workflow-level and scan correlation</h2><h3>Workflow events with multiple artifacts</h3><p>A workflow event describes the entire run:</p><pre><code>{
+  "event_type": "workflow_completed",
+  "source_run_id": "20001",
+  "workflow_conclusion": "success"
+}</code></pre><p>A workflow may process many artifacts, so it should not carry only one <code>correlation_id</code>. Artifact events carry both identifiers:</p><pre><code>{
+  "correlation_id": "corr_A",
+  "source_run_id": "20001"
+}
+
+{
+  "correlation_id": "corr_B",
+  "source_run_id": "20001"
+}</code></pre><p>Splunk joins them through <code>source_run_id</code>:</p><pre><code>workflow run 20001
+  ├── corr_A → nginx → published
+  └── corr_B → redis → scan-gated</code></pre><p>A separate <code>workflow_artifact_link</code> event is normally unnecessary because every artifact event already contains both identifiers.</p>
+        <h3>Scan correlation</h3><p>One artifact might be scanned more than once in the same processing journey. Use a separate <code>scan_id</code>:</p><pre><code>{
+  "event_type": "vulnerability_scan_started",
+  "correlation_id": "corr_A",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "scan_id": "scan_abc"
+}
+
+{
+  "event_type": "vulnerability_scan_completed",
+  "correlation_id": "corr_A",
+  "artifact_id": "container|dockerhub|library/nginx|1.28.0",
+  "scan_id": "scan_abc"
+}</code></pre><p>This allows:</p><pre><code>scan_duration = scan_completed.ts - scan_started.ts</code></pre><p>A retry gets a different <code>scan_id</code> but retains the same <code>correlation_id</code>.</p></section>
+
+      <section id="metrics"><h2>Which metrics require which identifier</h2><div class="table-wrap"><table><thead><tr><th>Metric</th><th>Primary identifier</th></tr></thead><tbody><tr><td>Current whitelist count</td><td><code>artifact_id</code></td></tr><tr><td>Images whitelisted per week/month</td><td><code>artifact_id</code> + publication event</td></tr><tr><td>New release detected</td><td><code>artifact_id</code></td></tr><tr><td>Vulnerability severity</td><td><code>artifact_id</code> + <code>scan_id</code></td></tr><tr><td>Ingestion failure rate</td><td><code>correlation_id</code></td></tr><tr><td>Approval rate</td><td><code>correlation_id</code></td></tr><tr><td>Failure reasons</td><td><code>correlation_id</code></td></tr><tr><td>Time-to-approval</td><td><code>correlation_id</code></td></tr><tr><td>Detection-to-publication</td><td><code>correlation_id</code></td></tr><tr><td>Vendor distribution</td><td><code>artifact_id</code></td></tr><tr><td>Pipeline health</td><td><code>source_run_id</code></td></tr><tr><td>Lifecycle timeline</td><td><code>correlation_id</code> + <code>artifact_id</code></td></tr><tr><td>Event deduplication</td><td><code>event_id</code></td></tr></tbody></table></div></section>
+
+      <section id="retention"><h2>Effect of the 40-day retention limit</h2><p>Correlation searches work only while all relevant events remain available. If a request begins and its terminal outcome occurs more than 40 days later, the initial event may expire before the outcome is indexed.</p><p>To protect the metrics, the terminal event should also include precomputed timing fields:</p><pre><code>{
+  "event_type": "catalog_publish",
+  "correlation_id": "corr_A",
+  "request_initiated_at": "2026-07-01T10:00:00Z",
+  "policy_decision_at": "2026-07-01T10:42:00Z",
+  "cataloged_at": "2026-07-01T10:45:00Z",
+  "time_to_approval_seconds": 2520,
+  "time_to_whitelist_seconds": 2700
+}</code></pre><p>This allows recent dashboards to calculate percentiles without always joining back to the initial event.</p><p>For long-term metrics, these terminal summaries must be written to a longer-retention summary index or another approved durable store.</p></section>
+
+      <section id="rules" class="decision"><h2>Final correlation rule</h2><p>Every event does not need every identifier. Use this minimum:</p><pre><code>All events:
+  event_id
+  event_type
+  ts
+  source_run_id
+  source_workflow
+
+Artifact events:
+  artifact_id
+  correlation_id
+
+Request events:
+  request_issue
+  correlation_id
+
+Scan events:
+  artifact_id
+  correlation_id
+  scan_id
+
+Workflow events:
+  source_run_id
+
+Reconciliation snapshots:
+  artifact_id
+  snapshot_id</code></pre><blockquote>Correlation is necessary for the lifecycle, approval, failure-rate, and timing requirements. Use <code>correlation_id</code> to join one processing journey, <code>artifact_id</code> for resolved inventory, <code>source_run_id</code> for workflow operations, <code>scan_id</code> for scan attempts, and <code>event_id</code> only for event uniqueness and deduplication.</blockquote></section>
+    </main>
+  </div>
+  <footer>This document supplements the write-time versus catalog-diff telemetry assessment and applies to issue-driven, scheduled, recurring, and reconciliation events.</footer>
+</body>
+</html>
