@@ -115,4 +115,21 @@ So the corrected conclusion is:
 Do not use metrics-catalog.yml or its generated NDJSON files as the Splunk source. Read changes directly from the authoritative catalog JSON files. Reuse only the extractor’s schema knowledge and diffing ideas where helpful.
 
 This also avoids coupling Splunk ingestion to a separate reporting workflow that runs daily and regenerates historical metrics.
+========================================
+No—the recurring container scan does not appear to delete an already-published image from Artifactory when it becomes inactive. It changes the catalog status to inactive and updates scan/security fields. Any docker image rm commands are runner cleanup, not Artifactory deletion. See [image-recurring-scan.yml (line 657)](/Users/gilbertomendez/RECORE.third-party/.github/workflows/image-recurring-scan.yml:657).
+The existing release entry is updated in place: .status and .scanned_date are overwritten during each scan rather than creating a new dated entry. See [image-recurring-scan.yml (line 1223)](/Users/gilbertomendez/RECORE.third-party/.github/workflows/image-recurring-scan.yml:1223).
+Recommended approach:
+Keep one catalog entry representing the image’s current state.
+Emit a separate append-only Splunk event whenever status changes, containing previous_status, new_status, changed_at, and reason.
+Do not create another catalog release entry for the same image/version; that would duplicate inventory and distort whitelist totals.
+
+==============
+It is technically possible, but medium-to-high complexity.
+An external forwarder could periodically snapshot the catalog JSON files, compare each artifact/version with its previous snapshot, and detect:
+New entries
+Status transitions such as active → inactive
+Changed scanned_date or vulnerability counts
+Removals
+It would require persistent state/checkpoints, deterministic IDs, support for multiple catalog JSON schemas, duplicate prevention, and handling simultaneous catalog updates.
+However, catalog-only forwarding cannot satisfy all telemetry requirements because the JSON files do not contain every workflow event, request timestamp, approval decision, failure reason, or scan-start event. It is viable for current-state and catalog-change reporting, but not as the sole source for complete operational and audit telemetry.
 
