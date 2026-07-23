@@ -135,3 +135,18 @@ However, catalog-only forwarding cannot satisfy all telemetry requirements becau
 Full snapshots become progressively slower and more expensive as the catalog grows: every run must download, parse, normalize, compare, and checkpoint every entry—even when only one image changed.
 You can reduce the impact by storing only a compact hash/state record per artifact_id and processing only catalog files changed since the last commit. However, this effectively becomes a stateful catalog-diff system with checkpointing, merge handling, schema normalization, deduplication, and recovery logic.
 So full-catalog snapshots are reasonable as an occasional reconciliation safety net, but they are not a good primary real-time forwarding mechanism. This scalability and operational complexity is one reason write-time telemetry remains the stronger long-term design.
+======================= Metrics-catalgog.yml ===================
+Confirmed. Here's what metrics-catalog.yml actually does:
+
+It's a read-only reporting pipeline — it never touches vendor-catalog/. It runs in a separate job that checks out both repos, but only reads from vendor-catalog/*.json and only writes to metrics/ (NDJSON, REPORT.md, DASHBOARD.html, README.md). It has no code path that mutates the actual catalog data files — those are written elsewhere, by the lifecycle/recurring-scan workflows.
+
+It does capture history, not just a current-state snapshot — and it does this cleverly, from git itself rather than any live event log:
+
+extract_from_catalog_commits.py checks out the catalog repo with fetch-depth: 0 (full history) and walks, per vendor JSON file, every commit that ever touched it (get_file_commits).
+For each commit in order, it pulls that file's content at that commit (git show <hash>:<path>) and diffs it against the previous commit's snapshot of the same file (prev_state).
+From that diff it derives discrete events:
+software_added / release_added — a brand-new software entry or tag/version appears
+scan_updated — an existing tag's scanned_date or policy_gate changed (i.e., a rescan flipped it active/inactive/suppressed)
+These events get appended into additions.ndjson and scans.ndjson (and a merged all-events.ndjson), each carrying the commit hash, timestamp, and subject line — so it's effectively a derived changelog/audit trail of the catalog's evolution, reconstructed by replaying git history, not a live-captured stream.
+generate_report.py and generate_dashboard.py then just consume those NDJSON files to build the human-facing REPORT.md and DASHBOARD.html.
+One caveat worth knowing: this is a full re-walk every run (no incremental state) — since it processes the entire commit history of every catalog file from scratch each time (daily cron + on push to catalog main), it's expensive but self-healing; there's no risk of drift between the NDJSON and the actual catalog history since it's regenerated wholesale each time. The two largest event logs (all-events.ndjson, scans.ndjson) are deliberately excluded from the commit (.gitignore'd, only used in-run) because they'd blow past GitHub's 100MB file limit — only the small additions.ndjson plus the generated REPORT.md/DASHBOARD.html/README.md get committed back.
