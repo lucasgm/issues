@@ -31,3 +31,22 @@ A one-time historical backfill
 Periodic reconciliation
 Auditing catalog state changes
 The stronger primary design is to emit events at the workflow’s authoritative write-time checkpoints, using the shared composite action, while keeping Git-history extraction only as a backup.
+============
+Yes—metrics-catalog.yml checks out the catalog with fetch-depth: 0, and the extractor walks every reachable commit that touched each supported catalog JSON file.
+It therefore rebuilds DASHBOARD.html from the available Git history each time, rather than processing only changes since the previous run.
+Important limitations:
+Only vendor-catalog/containers/*.json, charts/*.json, and packages/*.json are included.
+vendor-catalog/library/*.json is omitted.
+Only history still reachable in Git can be reconstructed; rewritten or removed history is unavailable.
+Renamed or deleted catalog files may not be handled as complete continuous history.
+The dashboard reflects derived catalog changes, not workflow events that never produced a catalog commit.
+======
+It becomes progressively more expensive as the repository grows.
+Every run:
+Downloads the complete catalog Git history.
+Finds every commit for every supported JSON file.
+Executes git show for each historical version.
+Parses and compares every reconstructed snapshot.
+Regenerates all NDJSON files and the dashboard from scratch.
+The fact that scans.ndjson and all-events.ndjson already exceed GitHub’s 100 MB limit indicates meaningful processing volume.
+It is self-healing, but scales poorly. A better production design would process only commits since a stored checkpoint, with an occasional full-history reconciliation—not rebuild everything daily.
