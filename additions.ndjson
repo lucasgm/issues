@@ -17,3 +17,17 @@ Also, forwarding the complete regenerated additions.ndjson every day would creat
 
 Recommendation: use additions.ndjson only for a one-time historical backfill or supplementary “artifact added” reporting. It should not be the primary feed for the full telemetry acceptance criteria. 
 If this extraction approach is retained, it would at minimum need both additions and scans, library support, additional transition types, and incremental delivery.
+
+Correct—Git history is not a good primary source for live Splunk telemetry.
+Problems include:
+Events arrive only after a catalog commit, so workflow failures and cancellations may never appear.
+Request, approval, scan-start and failure-reason data may not exist in the catalog.
+Commit time is not necessarily the actual event time.
+Replaying full history is increasingly expensive and can resend duplicates.
+Merge commits, generated metrics commits and history rewrites add noise or risk data loss.
+Some catalog categories are currently omitted by the extractor.
+Git history is still useful for:
+A one-time historical backfill
+Periodic reconciliation
+Auditing catalog state changes
+The stronger primary design is to emit events at the workflow’s authoritative write-time checkpoints, using the shared composite action, while keeping Git-history extraction only as a backup.
