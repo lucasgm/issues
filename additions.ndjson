@@ -1,0 +1,19 @@
+Yes, additions.ndjson can technically be forwarded to Splunk, but it would be only a partial historical feed—not a sufficient telemetry solution.
+It can provide:
+software_added
+release_added
+Vendor, artifact/version, commit time and initial security state
+It cannot provide:
+Later active/inactive/suppressed transitions—those are in scans.ndjson, not additions.ndjson
+Libraries under vendor-catalog/library
+Removals, sunset transitions, suppression renewal/expiration, or detailed failure reasons
+Request initiation, approval/rejection, scan-start, workflow failure or time-to-approval events
+Accurate current whitelist totals, because an originally added image may subsequently become inactive
+
+Two important corrections:
+metrics-catalog.yml does modify the catalog repository’s generated metrics/ files and .gitignore, although it does not modify vendor-catalog/.
+Its push: main trigger applies to this automation repository, not automatically to pushes on RECORE.third-party-catalog. Catalog-only changes are generally picked up by the daily schedule.
+Also, forwarding the complete regenerated additions.ndjson every day would create duplicate Splunk events unless the forwarder implements checkpoints or deterministic deduplication.
+
+Recommendation: use additions.ndjson only for a one-time historical backfill or supplementary “artifact added” reporting. It should not be the primary feed for the full telemetry acceptance criteria. 
+If this extraction approach is retained, it would at minimum need both additions and scans, library support, additional transition types, and incremental delivery.
