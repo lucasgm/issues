@@ -12356,5 +12356,25 @@ _Items with the most recent scan result showing a policy gate failure._
 | dockerhub | servicecontrol-ravendb          | 6.13.1                                                                                       | 13       | 75   | 2301   | fail        |
 | dockerhub | apache/airflow                  | 3.0.2                                                                                        | 13       | 83   | 83     | fail        |
 
----
-_Data sourced from git commit history of `icesdlc/RECORE.third-party-catalog`. Regenerated daily by the Catalog Metrics workflow._
+===============================================================================================================================================================================
+
+Third-Party Catalog — Weekly Dashboard
+Security & activity metrics derived from catalog git history
+
+Generated: 2026-07-09 05:20 UTC
+Total Images in Catalog
+3,956
+850 added in last 30 days
+Vulnerable at Ingestion
+1,562
+of all-time additions
+Overall Rescan Pass Rate
+79.3%
+across all rescan events
+This Week — Pulled
+177
+2026-W28
+This Week — Vulnerable
+30
+of 177 pulled this week
+
